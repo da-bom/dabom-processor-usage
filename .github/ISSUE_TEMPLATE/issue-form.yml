@@ -1,14 +1,14 @@
 name: '이슈 생성'
 description: 'Repo에 이슈를 생성합니다.'
-title: '이슈 이름을 작성해주세요'
+title: '[DABOM-xxx] 작업에 대한 요약'
 
 body:
   - type: input
     id: parentKey
     attributes:
       label: '🎟️ 지라 티켓 (Ticket Number)'
-      description: 'Jira Ticket Number를 기입해주세요'
-      placeholder: 'DABOM-00'
+      description: 'Jira Ticket Number를 기입해주세요 (예: DABOM-56, DABOM-123)'
+      value: 'DABOM-xxx'
     validations:
       required: true
 
@@ -16,8 +16,8 @@ body:
     id: branch
     attributes:
       label: '🌳 브랜치명 (Branch)'
-      description: '영어로 브랜치명을 작성해주세요 (예: feat/DABOM-00, fix/DABOM-00)'
-      placeholder: 'feat/DABOM-00'
+      description: '영어로 브랜치명을 작성해주세요 (예: feat/DABOM-56, fix/DABOM-123)'
+      value: '{type}/DABOM-xxx'
     validations:
       required: true
 
@@ -25,16 +25,11 @@ body:
     id: description
     attributes:
       label: '📝 상세 내용 (Description)'
-      description: '이슈에 대해서 간략히 설명해주세요'
-    validations:
-      required: true
-
-  - type: textarea
-    id: tasks
-    attributes:
-      label: '✅ TO-DO LIST'
-      description: '해당 이슈에 대해 구체적인 할 일을 작성해주세요'
+      description: '이슈에 대한 설명과 할 일(TODO)을 함께 작성해주세요'
       value: |
+        이슈에 대한 설명
+
+        ### ✅ TO-DO LIST
         - [ ] Task1
         - [ ] Task2
     validations:
