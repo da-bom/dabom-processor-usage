@@ -1,0 +1,255 @@
+# ============================================================================
+# Backend Deploy Workflow (Coolify + GHCR)
+# ============================================================================
+# 역할:
+#   - Integrate workflow 성공 후 자동 실행
+#   - integrate에서 생성된 JAR artifact 사용 (빌드 재수행 없음)
+#   - Docker 이미지 빌드 및 GHCR 푸시
+#   - Coolify webhook으로 배포 트리거 (Coolify가 GHCR에서 이미지 pull)
+#
+# Job 구조:
+#   prepare ──> build-image ──> deploy
+#
+# 트리거:
+#   - Integrate Backend workflow가 develop 브랜치에서 성공적으로 완료된 후
+#   - 수동 실행 (workflow_dispatch) - 최근 성공한 integrate run의 artifact 사용
+#
+# GitHub Secrets (Settings > Secrets and variables > Actions > Secrets):
+#   - COOLIFY_WEBHOOK     : Coolify 배포 webhook URL
+#   - COOLIFY_TOKEN   : Coolify API Token (환경변수 주입 + webhook 인증)
+#   - COOLIFY_URL         : Coolify 서버 URL (e.g., https://coolify.example.com)
+#   - COOLIFY_SERVICE_ID  : Coolify 애플리케이션 서비스 UUID
+#   - SPRING_PROFILE      : Spring 프로필 (예: prod, local, test)
+#   - DATABASE_URL        : Spring Datasource URL (jdbc:mysql://...)
+#   - DATABASE_USER       : DB 사용자명
+#   - DATABASE_PASSWORD   : DB 비밀번호
+#   - JWT_SECRET_KEY      : JWT 서명 키
+#   - JWT_ACCESS_TOKEN_EXPIRES_IN : JWT Access Token 만료 시간 (ms, 기본: 3600000)
+#   - JWT_REFRESH_TOKEN_EXPIRES_IN : JWT Refresh Token 만료 시간 (ms, 기본: 604800000)
+#   - GOOGLE_CLIENT_NAME  : Google OAuth2 클라이언트 이름
+#   - GOOGLE_CLIENT_ID    : Google OAuth2 클라이언트 ID
+#   - GOOGLE_CLIENT_SECRET : Google OAuth2 클라이언트 시크릿
+#   - GOOGLE_REDIRECT_URI : Google OAuth2 리디렉션 URI
+#   - FRONTEND_URL        : 프론트엔드 URL (선택, 기본: http://localhost:5173)
+#   - OTEL_EXPORTER_OTLP_ENDPOINT : OpenTelemetry 수집 엔드포인트 (선택)
+# ============================================================================
+
+name: Deploy Backend to Coolify
+
+on:
+  workflow_run:
+    workflows: ["Integrate Backend"]
+    types:
+      - completed
+    branches:
+      - develop
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/sscc-web-be
+
+jobs:
+  # ==========================================================================
+  # Prepare Job - Artifact 준비
+  # ==========================================================================
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    # workflow_run 트리거일 경우 integrate 성공 및 push 이벤트일 때만 실행
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+
+    outputs:
+      run_id: ${{ steps.get-run-info.outputs.run_id }}
+      head_sha: ${{ steps.get-run-info.outputs.head_sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get workflow run info
+        id: get-run-info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Manual trigger detected. Finding latest successful integrate run..."
+
+            # 최근 성공한 Integrate Backend workflow run 조회
+            RUN_INFO=$(gh run list \
+              --workflow "Integrate Backend" \
+              --branch develop \
+              --status success \
+              --event push \
+              --limit 1 \
+              --json databaseId,headSha)
+
+            RUN_ID=$(echo "$RUN_INFO" | jq -r '.[0].databaseId')
+            HEAD_SHA=$(echo "$RUN_INFO" | jq -r '.[0].headSha')
+
+            if [ "$RUN_ID" == "null" ] || [ -z "$RUN_ID" ]; then
+              echo "::error::No successful integrate workflow run found"
+              exit 1
+            fi
+
+            echo "Found run ID: $RUN_ID, commit: $HEAD_SHA"
+          else
+            echo "workflow_run trigger detected"
+            RUN_ID="${{ github.event.workflow_run.id }}"
+            HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+          fi
+
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+
+      - name: Download artifact from Integrate workflow
+        uses: actions/download-artifact@v4
+        with:
+          name: spring-boot-app
+          path: build/libs
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.get-run-info.outputs.run_id }}
+
+      - name: Verify and upload artifact
+        run: |
+          echo "Downloaded artifacts:"
+          ls -la build/libs/
+          JAR_FILE=$(ls build/libs/*.jar | head -1)
+          echo "JAR file: $JAR_FILE"
+
+      - name: Upload artifact for next jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-artifact
+          path: build/libs/*.jar
+          retention-days: 1
+
+  # ==========================================================================
+  # Build Image Job - Docker 빌드 및 GHCR 푸시
+  # ==========================================================================
+  build-image:
+    runs-on: ubuntu-latest
+    needs: [prepare]
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deploy-artifact
+          path: build/libs
+
+      # Docker IMAGE_NAME을 소문자로 변환
+      - name: Set lowercase image name
+        run: echo "IMAGE_NAME=$(echo ${{ env.IMAGE_NAME }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Login to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.deploy
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.head_sha }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==========================================================================
+  # Deploy Job - Coolify 환경변수 주입 후 webhook으로 배포 트리거
+  # 사전 조건: Coolify 대시보드에서 이미지 소스가
+  #            ghcr.io/<owner>/sscc-web-be:latest (소문자) 로 설정되어 있어야 함
+  # ==========================================================================
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: [prepare, build-image]
+
+    steps:
+      - name: Update Coolify environment variables
+        env:
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          COOLIFY_SERVICE_ID: ${{ secrets.COOLIFY_SERVICE_ID }}
+        run: |
+          # Build JSON array of all environment variables
+          ENV_DATA=$(jq -n \
+            --arg spring_profile "${{ secrets.SPRING_PROFILE }}" \
+            --arg db_url "${{ secrets.DATABASE_URL }}" \
+            --arg db_user "${{ secrets.DATABASE_USER }}" \
+            --arg db_pass "${{ secrets.DATABASE_PASSWORD }}" \
+            --arg jwt_secret "${{ secrets.JWT_SECRET_KEY }}" \
+            --arg jwt_access_ttl "${{ secrets.JWT_ACCESS_TOKEN_EXPIRES_IN }}" \
+            --arg jwt_refresh_ttl "${{ secrets.JWT_REFRESH_TOKEN_EXPIRES_IN }}" \
+            --arg google_name "${{ secrets.GOOGLE_CLIENT_NAME }}" \
+            --arg google_id "${{ secrets.GOOGLE_CLIENT_ID }}" \
+            --arg google_secret "${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            --arg google_redirect "${{ secrets.GOOGLE_REDIRECT_URI }}" \
+            --arg frontend_url "${{ secrets.FRONTEND_URL }}" \
+            --arg otel_endpoint "${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}" \
+            '{
+              data: [
+                {key: "SPRING_PROFILES_ACTIVE", value: $spring_profile, is_preview: false, is_literal: false, is_multiline: false, is_shown_once: false},
+                {key: "DATABASE_URL", value: $db_url, is_preview: false, is_literal: false, is_multiline: false, is_shown_once: false},
+                {key: "DATABASE_USER", value: $db_user, is_preview: false, is_literal: false, is_multiline: false, is_shown_once: false},
+                {key: "DATABASE_PASSWORD", value: $db_pass, is_preview: false, is_literal: false, is_multiline: false, is_shown_once: false},
+                {key: "JWT_SECRET_KEY", value: $jwt_secret, is_preview: false, is_literal: false, is_multiline: false, is_shown_once: false},
+                {key: "JWT_ACCESS_TOKEN_EXPIRES_IN", value: $jwt_access_ttl, is_preview: false, is_literal: false, is_multiline: false, is_shown_once: false},
+                {key: "JWT_REFRESH_TOKEN_EXPIRES_IN", value: $jwt_refresh_ttl, is_preview: false, is_literal: false, is_multiline: false, is_shown_once: false},
+                {key: "GOOGLE_CLIENT_NAME", value: $google_name, is_preview: false, is_literal: false, is_multiline: false, is_shown_once: false},
+                {key: "GOOGLE_CLIENT_ID", value: $google_id, is_preview: false, is_literal: false, is_multiline: false, is_shown_once: false},
+                {key: "GOOGLE_CLIENT_SECRET", value: $google_secret, is_preview: false, is_literal: false, is_multiline: false, is_shown_once: false},
+                {key: "GOOGLE_REDIRECT_URI", value: $google_redirect, is_preview: false, is_literal: false, is_multiline: false, is_shown_once: false},
+                {key: "FRONTEND_URL", value: $frontend_url, is_preview: false, is_literal: false, is_multiline: false, is_shown_once: false},
+                {key: "OTEL_EXPORTER_OTLP_ENDPOINT", value: $otel_endpoint, is_preview: false, is_literal: false, is_multiline: false, is_shown_once: false}
+              ]
+            }'
+          )
+
+          # Send bulk update request
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X PATCH "$COOLIFY_URL/api/v1/applications/$COOLIFY_SERVICE_ID/envs/bulk" \
+            -H "Authorization: Bearer $COOLIFY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$ENV_DATA")
+
+          if [ "$HTTP_STATUS" -ne 201 ]; then
+            echo "::error::Failed to update environment variables (HTTP $HTTP_STATUS)"
+            exit 1
+          fi
+          echo "Successfully updated all environment variables (HTTP $HTTP_STATUS)"
+
+      - name: Deploy to Coolify via webhook
+        run: |
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --request GET '${{ secrets.COOLIFY_WEBHOOK }}' \
+            --header 'Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}')
+
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            echo "::error::Coolify deployment failed with HTTP $HTTP_STATUS"
+            exit 1
+          fi
+          echo "Coolify deployment triggered successfully (HTTP $HTTP_STATUS)"
+
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: \`${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.head_sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Source Run ID**: ${{ needs.prepare.outputs.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Registry**: GHCR (ghcr.io)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deploy Target**: Coolify" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY

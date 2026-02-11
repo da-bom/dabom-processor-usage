@@ -1,0 +1,23 @@
+name: "🐞 Bug"
+description: "버그 제보"
+labels: ["bug"]
+body:
+  - type: textarea
+    attributes:
+      label: 📄 설명
+      description: 어떤 문제가 발생했는지 간단히 설명해주세요
+      placeholder:
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: ⚙️ 재현 방법
+      description: 어떤 순서로 재현할 수 있는지 작성해주세요
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: 📸 스크린샷 / 로그
+      description: 가능하면 스크린샷이나 로그를 첨부해주세요
+    validations:
+      required: true

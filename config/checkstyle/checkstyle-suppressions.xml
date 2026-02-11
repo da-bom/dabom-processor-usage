@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+    "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+    "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<suppressions>
+    <!-- Exception 파라미터명 'e' 허용 (Java 관례: catch(Exception e)) -->
+    <suppress checks="ParameterName"
+              files=".*Exception.*\.java$|.*Advice\.java$"/>
+    <!-- record DTO는 Spotless 포맷을 따르므로 Indentation 충돌만 제외 -->
+    <suppress checks="Indentation"
+              files=".*[/\\]core[/\\]event[/\\]dto[/\\].*\.java"/>
+</suppressions>

@@ -1,0 +1,17 @@
+#!/bin/sh
+
+BRANCH_NAME=$(git branch --show-current)
+COMMIT_MSG_FILE=$1
+
+# 브랜치명에서 Jira 티켓 번호 추출 (예: feat/DABOM-32-some-slug → DABOM-32)
+TICKET=$(echo "$BRANCH_NAME" | grep -oE 'DABOM-[0-9]+' | head -1)
+
+# 티켓 번호가 있고, 커밋 메시지 첫 줄에 이미 포함 안 돼 있을 때만 앞에 추가
+# 결과: "feat: Add login" → "DABOM-32 feat: Add login"
+if [ -n "$TICKET" ] && ! head -1 "$COMMIT_MSG_FILE" | grep -q "$TICKET"; then
+  TEMP_FILE=$(mktemp)
+  FIRST_LINE=$(head -1 "$COMMIT_MSG_FILE")
+  echo "${TICKET} ${FIRST_LINE}" > "$TEMP_FILE"
+  tail -n +2 "$COMMIT_MSG_FILE" >> "$TEMP_FILE"
+  mv "$TEMP_FILE" "$COMMIT_MSG_FILE"
+fi

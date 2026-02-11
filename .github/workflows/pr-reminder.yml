@@ -1,0 +1,97 @@
+name: PR Reminder
+
+on:
+  schedule:
+    # 매 2시간마다 실행 (UTC 기준)
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+
+jobs:
+  pr-reminder:
+    runs-on: ubuntu-latest
+
+    permissions:
+      pull-requests: write
+      issues: write
+      contents: read
+
+    steps:
+      - name: Add reminder label & comment to inactive PRs
+        uses: actions/stale@v9
+        with:
+          # 🏷️ 중립적 리마인드 라벨
+          stale-pr-label: 'remind-needed'
+
+          # 💬 PR 코멘트 (작성자 + 리뷰어 모두 대상)
+          stale-pr-message: |
+            👋 **PR 리마인드 알림입니다**
+
+            이 PR이 몇 시간 동안 업데이트되지 않았어요.
+
+            - 🙋 **PR 작성자**: 추가 작업 중이거나 설명이 필요하면 코멘트 남겨주세요
+            - 👀 **리뷰어 / 팀원**: 이미 봤다면 LGTM 한 줄도 좋아요!
+
+            바쁘실 수 있다는 점 이해합니다 🙏
+            다만 작은 한 줄이 PR 흐름을 살려줘요 🙂
+
+          # ⏱️ 4시간 (4 / 24 day)
+          days-before-pr-stale: 0.1667
+          days-before-pr-close: -1  # ❌ 자동 close 없음
+
+          # Issue는 처리하지 않음
+          days-before-issue-stale: -1
+          days-before-issue-close: -1
+
+          # 업데이트되면 리마인드 자동 해제
+          remove-stale-when-updated: true
+
+          # 제외 대상
+          exempt-draft-pr: true
+          exempt-pr-labels: 'wip,blocked,do-not-remind'
+
+          operations-per-run: 20
+
+      - name: Notify Slack - PR Reminder (with PR links)
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PR_LIST=$(curl -fsS \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues?state=open&labels=remind-needed" \
+            | jq -r '.[] | select(.pull_request) |
+              "- <\(.html_url)|#\(.number)> \(.title)\n  👤 작성자: @\(.user.login)"')
+
+          # 공백/빈줄만 있는 경우 제거해서 진짜 비었는지 판단
+          PR_LIST_TRIMMED=$(printf "%s" "$PR_LIST" | sed '/^[[:space:]]*$/d')
+
+          if [ -z "$PR_LIST_TRIMMED" ]; then
+            echo "📭 리마인드 대상 PR이 없습니다. 슬랙 메시지를 보내지 않고 종료합니다."
+            exit 0
+          fi
+            MESSAGE="*< 👀 PR Reminder >*
+
+          최근 *업데이트가 없는 PR* 이 있어요 ⏳
+          짧게라도 확인 부탁드려요!
+
+          ━━━━━━━━━━━━━━
+          📌 *대상 PR*
+          $PR_LIST
+          ━━━━━━━━━━━━━━
+
+          👉 *PR 작성자*
+          - 진행 상황 공유 또는 추가 설명 부탁드려요
+
+          👉 *리뷰어 / 팀원*
+          - 이미 봤다면 👍 LGTM 한 줄이면 충분해요!
+
+
+          🙏 작은 액션 하나가 PR 흐름을 살려줘요"
+
+          # Slack으로 전송 (JSON 안전하게)
+          curl -fsS -X POST -H 'Content-type: application/json' \
+            --data "$(jq -n --arg text "$MESSAGE" '{text: $text}')" \
+            "$SLACK_WEBHOOK_URL"

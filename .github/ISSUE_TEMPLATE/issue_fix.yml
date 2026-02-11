@@ -1,0 +1,17 @@
+name: "🧩 Fix"
+description: "테스트 코드 작성 / 개선"
+labels: ["fix"]
+body:
+  - type: textarea
+    attributes:
+      label: 📄 설명
+      description: 오타, 잘못된 설정, 누락된 주석 등 사소한 수정을 설명해주세요
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: ✅ 작업 항목
+      description: 할 일을 체크박스 형태로 작성해주세요.
+      placeholder: 최대한 세분화 해서 적어주세요!
+    validations:
+      required: true

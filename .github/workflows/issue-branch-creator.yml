@@ -1,0 +1,114 @@
+name: Issue Branch Creator
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  create_branch:
+    runs-on: ubuntu-latest
+    if: github.event.issue.user.login != 'github-actions[bot]'
+
+    permissions:
+      contents: write
+      issues: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
+
+      - name: Parse branch name from issue body
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+
+            // 이슈 본문에서 브랜치명 필드 파싱
+            const branchMatch = body.match(/### 🌳 브랜치명[^\n]*\n\n([^\n]+)/);
+            if (!branchMatch) {
+              core.setFailed('브랜치명 필드를 찾을 수 없습니다');
+              return;
+            }
+
+            const branchName = branchMatch[1].trim();
+            core.info(`파싱된 브랜치명: ${branchName}`);
+
+            // 컨벤션 패턴 검증: {type}/DABOM-{number} 또는 {type}/DABOM-{number}-{slug}
+            const validTypes = [
+              'feat', 'fix', 'refactor', 'design', 'style', 'docs',
+              'test', 'chore', 'init', 'rename', 'remove', 'cicd', 'hotfix'
+            ];
+            const pattern = new RegExp(`^(${validTypes.join('|')})/DABOM-\\d+`);
+
+            if (!pattern.test(branchName)) {
+              core.setFailed(
+                `브랜치명이 컨벤션에 맞지 않습니다: ${branchName}\n` +
+                `예상 형식: feat/DABOM-00, fix/DABOM-00`
+              );
+              return;
+            }
+
+            const type = branchName.match(/^(\w+)\//)[1];
+            core.setOutput('branch', branchName);
+            core.setOutput('type', type);
+
+      - name: Add type label to issue
+        if: steps.parse.outputs.type
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const type = '${{ steps.parse.outputs.type }}';
+            const issueNumber = context.payload.issue.number;
+
+            // 라벨이 없으면 생성
+            const labelColors = {
+              feat: '0E8A16', fix: 'D93F0B', refactor: '1D76DB',
+              design: 'F9D0C4', style: 'FEF2C0', docs: '0075CA',
+              test: 'BFD4F2', chore: 'D4C5F9', init: '5319E7',
+              rename: 'C2E0C6', remove: 'B60205', cicd: 'FBCA04',
+              hotfix: 'E11D48'
+            };
+
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: type
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: type,
+                  color: labelColors[type] || 'EDEDED'
+                });
+              }
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              labels: [type]
+            });
+            core.info(`✅ 라벨 추가: ${type}`);
+
+      - name: Create and push branch
+        if: steps.parse.outputs.branch
+        run: |
+          BRANCH_NAME="${{ steps.parse.outputs.branch }}"
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH_NAME"
+          git push origin "$BRANCH_NAME"
+
+          gh issue comment "$ISSUE_NUMBER" --body "🌿 브랜치가 생성되었습니다: \`$BRANCH_NAME\`"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

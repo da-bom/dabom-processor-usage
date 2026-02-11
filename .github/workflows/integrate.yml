@@ -1,0 +1,314 @@
+# ============================================================================
+# Backend Integration Workflow
+# ============================================================================
+# 역할:
+#   - 소스 코드 정적 분석 (Spotless, Checkstyle)
+#   - 테스트 수행 및 JaCoCo 커버리지 생성
+#   - SonarQube 코드 품질/커버리지/보안 분석
+#   - JAR artifact 생성 (deploy workflow에서 사용)
+#
+# Job 구조:
+#   lint ──┬──> analyze ──> build
+#   test ──┘
+#
+# GitHub Secrets:
+#   - SONAR_TOKEN        : SonarQube Token
+#   - SONAR_HOST_URL     : SonarQube Server URL (e.g., https://sonar.example.com)
+# ============================================================================
+
+name: Integrate Backend
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+  push:
+    branches:
+      - develop
+
+env:
+  JAVA_VERSION: '17'
+
+jobs:
+  # ==========================================================================
+  # Lint Job - 코드 스타일 검사
+  # ==========================================================================
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: gradle
+
+      - name: Grant execution to Gradle wrapper
+        run: chmod +x gradlew
+
+      - name: Run Spotless Check
+        run: ./gradlew spotlessCheck
+
+      - name: Run Checkstyle
+        run: ./gradlew checkstyleMain checkstyleTest
+
+  # ==========================================================================
+  # Test Job - 테스트 및 커버리지
+  # ==========================================================================
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: gradle
+
+      - name: Grant execution to Gradle wrapper
+        run: chmod +x gradlew
+
+      - name: Run Tests with JaCoCo
+        run: ./gradlew test jacocoTestReport
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            build/test-results/
+            build/reports/jacoco/
+          if-no-files-found: ignore
+
+  # ==========================================================================
+  # Analyze Job - SonarQube 분석
+  # ==========================================================================
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # SonarQube 분석을 위해 전체 히스토리 필요
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: gradle
+
+      - name: Cache SonarQube packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Download test results
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: test-results
+          path: build/
+
+      - name: Grant execution to Gradle wrapper
+        run: chmod +x gradlew
+
+      - name: Compile classes for SonarQube analysis
+        run: ./gradlew compileJava
+
+      - name: SonarQube Scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: ./gradlew sonar --info
+
+      - name: SonarQube Quality Gate + PR Comment (Community)
+        if: github.event_name == 'pull_request'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          set -e
+
+          REPORT_FILE="build/sonar/report-task.txt"
+
+          if [ ! -f "$REPORT_FILE" ]; then
+            echo "report-task.txt not found"
+            exit 1
+          fi
+
+          # ------------------------------------------------------------------
+          # Basic info from report-task.txt
+          # ------------------------------------------------------------------
+          CE_TASK_ID=$(grep '^ceTaskId=' $REPORT_FILE | cut -d'=' -f2)
+          PROJECT_KEY=$(grep '^projectKey=' $REPORT_FILE | cut -d'=' -f2)
+          DASHBOARD_URL=$(grep '^dashboardUrl=' $REPORT_FILE | cut -d'=' -f2-)
+
+          echo "ProjectKey: $PROJECT_KEY"
+          echo "Branch: $BRANCH"
+
+          # ------------------------------------------------------------------
+          # Wait for CE task
+          # ------------------------------------------------------------------
+          for i in {1..30}; do
+            STATUS_JSON=$(curl -s -u "$SONAR_TOKEN:" \
+              "$SONAR_HOST_URL/api/ce/task?id=$CE_TASK_ID")
+
+            TASK_STATUS=$(echo "$STATUS_JSON" | jq -r '.task.status')
+
+            if [ "$TASK_STATUS" = "SUCCESS" ]; then
+              break
+            fi
+
+            echo "Waiting for SonarQube task... ($i)"
+            sleep 5
+          done
+
+          ANALYSIS_ID=$(echo "$STATUS_JSON" | jq -r '.task.analysisId')
+
+          # ------------------------------------------------------------------
+          # Quality Gate
+          # ------------------------------------------------------------------
+          QG_JSON=$(curl -s -u "$SONAR_TOKEN:" \
+            "$SONAR_HOST_URL/api/qualitygates/project_status?analysisId=$ANALYSIS_ID")
+
+          QG_STATUS=$(echo "$QG_JSON" | jq -r '.projectStatus.status')
+
+          # ------------------------------------------------------------------
+          # Branch-level Issues (SAFE)
+          # ------------------------------------------------------------------
+          ISSUES_JSON=$(curl -s -u "$SONAR_TOKEN:" \
+            "$SONAR_HOST_URL/api/issues/search?projectKeys=$PROJECT_KEY&branch=$BRANCH&resolved=false")
+
+          BUGS=$(echo "$ISSUES_JSON" | jq '[ (.issues // [])[] | select(.type=="BUG") ] | length')
+          VULNS=$(echo "$ISSUES_JSON" | jq '[ (.issues // [])[] | select(.type=="VULNERABILITY") ] | length')
+          SMELLS=$(echo "$ISSUES_JSON" | jq '[ (.issues // [])[] | select(.type=="CODE_SMELL") ] | length')
+
+          # ------------------------------------------------------------------
+          # Branch-level Measures (SAFE)
+          # ------------------------------------------------------------------
+          MEASURES_JSON=$(curl -s -u "$SONAR_TOKEN:" \
+            "$SONAR_HOST_URL/api/measures/component?component=$PROJECT_KEY&branch=$BRANCH&metricKeys=coverage,duplicated_lines_density")
+
+          COVERAGE=$(echo "$MEASURES_JSON" | jq -r '.component.measures // [] | map(select(.metric=="coverage")) | .[0].value // "0"')
+          DUPLICATION=$(echo "$MEASURES_JSON" | jq -r '.component.measures // [] | map(select(.metric=="duplicated_lines_density")) | .[0].value // "0"')
+
+          # ------------------------------------------------------------------
+          # Result formatting
+          # ------------------------------------------------------------------
+          if [ "$QG_STATUS" = "OK" ]; then
+            ICON="✅"
+            RESULT="PASSED"
+          else
+            ICON="❌"
+            RESULT="FAILED"
+          fi
+
+          BODY=$(cat <<EOF
+          ## SonarQube Quality Summary (Community)
+
+          ${ICON} **Quality Gate ${RESULT}**
+
+          **Branch:** \`${BRANCH}\`  
+          **Compared to:** default branch
+
+          ### Issues
+          - 🐞 Bugs: ${BUGS}
+          - 🔐 Vulnerabilities: ${VULNS}
+          - 📎 Code Smells: ${SMELLS}
+
+          ### Measures
+          - Coverage: ${COVERAGE}%
+          - Duplication: ${DUPLICATION}%
+
+          🔗 Dashboard: ${DASHBOARD_URL}&branch=${BRANCH}
+
+          _Generated automatically by GitHub Actions._
+          EOF
+          )
+
+          # ------------------------------------------------------------------
+          # PR comment
+          # ------------------------------------------------------------------
+          gh api repos/$REPO/issues/$PR_NUMBER/comments \
+            -f body="$BODY"
+
+          # ------------------------------------------------------------------
+          # Fail workflow if Quality Gate failed
+          # ------------------------------------------------------------------
+          if [ "$QG_STATUS" != "OK" ]; then
+            echo "Quality Gate FAILED"
+            exit 1
+          fi
+
+
+  # ==========================================================================
+  # Build Job - JAR 빌드 및 Artifact 업로드
+  # ==========================================================================
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [analyze]
+
+    permissions:
+      actions: write
+      contents: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: gradle
+
+      - name: Grant execution to Gradle wrapper
+        run: chmod +x gradlew
+
+      - name: Build Spring Boot JAR
+        run: ./gradlew bootJar
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spring-boot-app
+          path: build/libs/*.jar
+
+      - name: Integration Summary
+        run: |
+          echo "## Integration Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch** : ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit** : ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
