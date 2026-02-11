@@ -3,9 +3,10 @@ package com.project.controller;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.project.global.api.response.ApiResponse;
 
 @RestController
 public class HomeController {
@@ -17,8 +18,8 @@ public class HomeController {
     private String version;
 
     @GetMapping("/")
-    public ResponseEntity<Map<String, String>> home() {
-        return ResponseEntity.ok(
+    public ApiResponse<Map<String, String>> home() {
+        return ApiResponse.success(
                 Map.of(
                         "status",
                         "ok",

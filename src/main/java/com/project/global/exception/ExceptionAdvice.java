@@ -8,8 +8,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
-import com.project.global.exception.code.domain.BaseErrorCode;
-import com.project.global.exception.code.domain.GlobalErrorCode;
+import com.project.global.exception.code.BaseErrorCode;
+import com.project.global.exception.code.GlobalErrorCode;
 
 import lombok.extern.slf4j.Slf4j;
 

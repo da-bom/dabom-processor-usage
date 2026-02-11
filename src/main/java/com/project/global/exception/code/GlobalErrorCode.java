@@ -1,4 +1,4 @@
-package com.project.global.exception.code.domain;
+package com.project.global.exception.code;
 
 import org.springframework.http.HttpStatus;
 

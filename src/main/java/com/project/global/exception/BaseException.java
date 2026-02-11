@@ -1,6 +1,6 @@
 package com.project.global.exception;
 
-import com.project.global.exception.code.domain.BaseErrorCode;
+import com.project.global.exception.code.BaseErrorCode;
 
 import lombok.Getter;
 

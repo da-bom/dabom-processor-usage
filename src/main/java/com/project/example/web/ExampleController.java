@@ -1,6 +1,5 @@
 package com.project.example.web;
 
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,6 +14,7 @@ import com.project.example.web.dto.request.CreateExampleRequest;
 import com.project.example.web.dto.request.UpdateExampleRequest;
 import com.project.example.web.dto.response.ExampleDetailResponse;
 import com.project.example.web.dto.response.ExampleResponse;
+import com.project.global.api.response.ApiResponse;
 
 import lombok.RequiredArgsConstructor;
 
@@ -37,9 +37,9 @@ public class ExampleController {
      * @return Example 상세 정보
      */
     @GetMapping("/{exampleId}")
-    public ResponseEntity<ExampleDetailResponse> findById(@PathVariable Long exampleId) {
+    public ApiResponse<ExampleDetailResponse> findById(@PathVariable Long exampleId) {
         Example example = exampleService.findById(exampleId);
-        return ResponseEntity.ok(exampleWebMapper.toDetailResponse(example));
+        return ApiResponse.success(exampleWebMapper.toDetailResponse(example));
     }
 
     /**
@@ -49,10 +49,10 @@ public class ExampleController {
      * @return 생성된 Example 정보
      */
     @PostMapping
-    public ResponseEntity<ExampleResponse> create(@RequestBody CreateExampleRequest request) {
+    public ApiResponse<ExampleResponse> create(@RequestBody CreateExampleRequest request) {
         Example example = exampleWebMapper.toDomain(request);
         Example createdExample = exampleService.create(example);
-        return ResponseEntity.ok(exampleWebMapper.toResponse(createdExample));
+        return ApiResponse.created(exampleWebMapper.toResponse(createdExample));
     }
 
     /**
@@ -63,10 +63,10 @@ public class ExampleController {
      * @return 업데이트된 Example 정보
      */
     @PutMapping("/{exampleId}")
-    public ResponseEntity<ExampleResponse> update(
+    public ApiResponse<ExampleResponse> update(
             @PathVariable Long exampleId, @RequestBody UpdateExampleRequest request) {
         Example example = exampleWebMapper.toDomain(exampleId, request);
         Example updatedExample = exampleService.update(example);
-        return ResponseEntity.ok(exampleWebMapper.toResponse(updatedExample));
+        return ApiResponse.success(exampleWebMapper.toResponse(updatedExample));
     }
 }
