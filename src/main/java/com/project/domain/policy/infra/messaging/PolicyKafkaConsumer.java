@@ -2,6 +2,8 @@ package com.project.domain.policy.infra.messaging;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -27,6 +29,21 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class PolicyKafkaConsumer {
     private static final Pattern HHMM_PATTERN = Pattern.compile("^\\d{4}$");
+    private static final Predicate<String> BINARY_FLAG_VALIDATOR =
+            value -> "1".equals(value) || "0".equals(value);
+    private static final Predicate<String> POSITIVE_LONG_VALIDATOR =
+            PolicyKafkaConsumer::isPositiveLongValue;
+    private static final Predicate<String> HHMM_VALIDATOR = PolicyKafkaConsumer::isValidHhmmValue;
+
+    private static final Map<String, Predicate<String>> EXACT_VALUE_VALIDATORS =
+            Map.of(
+                    "THROTTLE:SPEED", POSITIVE_LONG_VALIDATOR,
+                    "BLOCK:ACCESS", BINARY_FLAG_VALIDATOR,
+                    "BLOCK:TIME:START", HHMM_VALIDATOR,
+                    "BLOCK:TIME:END", HHMM_VALIDATOR);
+
+    private static final Map<String, Predicate<String>> PREFIX_VALUE_VALIDATORS =
+            Map.of("BLOCK:APP:", BINARY_FLAG_VALIDATOR, "LIMIT:DATA:", POSITIVE_LONG_VALIDATOR);
 
     private final ObjectMapper objectMapper;
     private final RedisTemplate<String, String> familyStringRedisTemplate;
@@ -211,39 +228,38 @@ public class PolicyKafkaConsumer {
         if (policyKey == null || policyKey.isBlank()) {
             return false;
         }
-        if ("THROTTLE:SPEED".equals(policyKey)) {
+        if (EXACT_VALUE_VALIDATORS.containsKey(policyKey)) {
             return true;
         }
-        if ("BLOCK:ACCESS".equals(policyKey) || policyKey.startsWith("BLOCK:APP:")) {
-            return true;
-        }
-        if ("BLOCK:TIME:START".equals(policyKey) || "BLOCK:TIME:END".equals(policyKey)) {
-            return true;
-        }
-        if (policyKey.startsWith("LIMIT:DATA:")) {
-            return true;
-        }
-        return false;
+        return findPrefixValidator(policyKey) != null;
     }
 
     private boolean isValidPolicyValue(String policyKey, String newValue) {
         // 정책 키별 value 형식 검증
-        if ("THROTTLE:SPEED".equals(policyKey)) {
-            return isPositiveLong(newValue);
+        if (policyKey == null || policyKey.isBlank()) {
+            return false;
         }
-        if ("BLOCK:ACCESS".equals(policyKey) || policyKey.startsWith("BLOCK:APP:")) {
-            return "1".equals(newValue) || "0".equals(newValue);
+        Predicate<String> exactValidator = EXACT_VALUE_VALIDATORS.get(policyKey);
+        if (exactValidator != null) {
+            return exactValidator.test(newValue);
         }
-        if ("BLOCK:TIME:START".equals(policyKey) || "BLOCK:TIME:END".equals(policyKey)) {
-            return isValidHhmm(newValue);
-        }
-        if (policyKey.startsWith("LIMIT:DATA:")) {
-            return isPositiveLong(newValue);
+        Predicate<String> prefixValidator = findPrefixValidator(policyKey);
+        if (prefixValidator != null) {
+            return prefixValidator.test(newValue);
         }
         return false;
     }
 
-    private boolean isPositiveLong(String value) {
+    private Predicate<String> findPrefixValidator(String policyKey) {
+        for (Map.Entry<String, Predicate<String>> entry : PREFIX_VALUE_VALIDATORS.entrySet()) {
+            if (policyKey.startsWith(entry.getKey())) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    private static boolean isPositiveLongValue(String value) {
         // 양의 정수 검증
         try {
             return Long.parseLong(value) > 0;
@@ -252,7 +268,7 @@ public class PolicyKafkaConsumer {
         }
     }
 
-    private boolean isValidHhmm(String value) {
+    private static boolean isValidHhmmValue(String value) {
         // HHMM 형식 + 시/분 범위 검증
         if (!HHMM_PATTERN.matcher(value).matches()) {
             return false;
