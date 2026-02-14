@@ -1,6 +1,7 @@
 package com.project.domain.policy.infra.messaging;
 
 import java.time.Duration;
+import java.util.List;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,6 +12,8 @@ import org.springframework.stereotype.Component;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.project.domain.family.entity.FamilyMember;
+import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.policy.PolicyUpdatedPayload;
 import com.project.global.util.RedisKeyGenerator;
@@ -26,6 +29,7 @@ public class PolicyKafkaConsumer {
     private final ObjectMapper objectMapper;
     private final RedisTemplate<String, String> familyStringRedisTemplate;
     private final RedisKeyGenerator redisKeyGenerator;
+    private final FamilyMemberRepository familyMemberRepository;
 
     // 중복 이벤트 키 TTL 설정 (기본값: 3600초)
     @Value("${app.kafka.dedup.policy-ttl-seconds}")
@@ -70,7 +74,6 @@ public class PolicyKafkaConsumer {
             // payload 필수값 검증
             // 누락시 잘못된 이벤트로 간주하고 종료
             if (payload.familyId() == null
-                    || payload.targetCustomerId() == null
                     || payload.policyKey() == null
                     || payload.policyKey().isBlank()) {
                 log.warn(
@@ -83,32 +86,43 @@ public class PolicyKafkaConsumer {
                 return;
             }
 
-            // constraint 키 생성
-            String constraintsKey =
-                    redisKeyGenerator.generateFamilyCustomerConstraintsKey(
-                            payload.familyId(), payload.targetCustomerId());
-
-            // 정책 반영
-            // newValue가 비어있으면 해당 policyKey 필드를 삭제 (정책 해제)
             String newValue = payload.newValue();
-            if (newValue == null || newValue.isBlank()) {
-                familyStringRedisTemplate.opsForHash().delete(constraintsKey, payload.policyKey());
+            Long targetCustomerId = payload.targetCustomerId();
+
+            // targetCustomerId != null: 해당하는 customer 정책 적용
+            if (targetCustomerId != null) {
+                String constraintsKey =
+                        redisKeyGenerator.generateFamilyCustomerConstraintsKey(
+                                payload.familyId(), targetCustomerId);
+                applyConstraint(constraintsKey, payload.policyKey(), newValue);
                 log.info(
-                        "Removed constraint. eventId={}, key={}, field={}",
+                        "Updated customer constraint. eventId={}, familyId={}, customerId={},"
+                                + " field={}, value={}",
                         eventId,
-                        constraintsKey,
-                        payload.policyKey());
+                        payload.familyId(),
+                        targetCustomerId,
+                        payload.policyKey(),
+                        newValue);
                 return;
             }
 
-            // newValue가 있으면 해당 policyKey 필드를 새 값으로 저장 (정책 갱신)
-            familyStringRedisTemplate
-                    .opsForHash()
-                    .put(constraintsKey, payload.policyKey(), newValue);
+            // targetCustomerId == null: family 전체 정책 -> active customer 전원에게 반영
+            List<FamilyMember> customers =
+                    familyMemberRepository.findAllByFamilyIdAndDeletedAtIsNull(payload.familyId());
+
+            for (FamilyMember customer : customers) {
+                String constraintsKey =
+                        redisKeyGenerator.generateFamilyCustomerConstraintsKey(
+                                payload.familyId(), customer.getCustomerId());
+                applyConstraint(constraintsKey, payload.policyKey(), newValue);
+            }
+
             log.info(
-                    "Updated constraint. eventId={}, key={}, field={}, value={}",
+                    "Updated family-wide constraint. eventId={}, familyId={}, targetCount={},"
+                            + " field={}, value={}",
                     eventId,
-                    constraintsKey,
+                    payload.familyId(),
+                    customers.size(),
                     payload.policyKey(),
                     newValue);
         } catch (JsonProcessingException e) {
@@ -116,5 +130,15 @@ public class PolicyKafkaConsumer {
         } catch (Exception e) {
             log.error("Failed to handle policy-updated event", e);
         }
+    }
+
+    private void applyConstraint(String constraintsKey, String policyKey, String newValue) {
+        // newValue가 비어있으면 해당 policyKey 필드를 삭제 (정책 해제)
+        if (newValue == null || newValue.isBlank()) {
+            familyStringRedisTemplate.opsForHash().delete(constraintsKey, policyKey);
+            return;
+        }
+        // newValue가 있으면 해당 policyKey 필드를 새 값으로 저장 (정책 갱신)
+        familyStringRedisTemplate.opsForHash().put(constraintsKey, policyKey, newValue);
     }
 }
