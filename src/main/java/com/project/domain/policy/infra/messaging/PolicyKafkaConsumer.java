@@ -174,7 +174,7 @@ public class PolicyKafkaConsumer {
 
     private boolean isDuplicated(String eventId) {
         // dedup 키가 이미 있으면 중복 이벤트로 판단
-        String dedupKey = "event:dedup:policy:" + eventId;
+        String dedupKey = redisKeyGenerator.generatePolicyEventDedupKey(eventId);
         Boolean firstSeen =
                 familyStringRedisTemplate
                         .opsForValue()
