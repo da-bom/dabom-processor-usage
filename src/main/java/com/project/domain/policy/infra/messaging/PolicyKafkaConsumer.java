@@ -54,16 +54,16 @@ public class PolicyKafkaConsumer {
     private long dedupTtlSeconds;
 
     @KafkaListener(topics = "policy-updated", groupId = "dabom-processor-usage-policy-group")
-    public void consume(ConsumerRecord<String, String> record) {
+    public void consume(ConsumerRecord<String, String> consumerRecord) {
         try {
             // 역직렬화
             EventEnvelope<PolicyUpdatedPayload> envelope =
-                    objectMapper.readValue(record.value(), new TypeReference<>() {});
+                    objectMapper.readValue(consumerRecord.value(), new TypeReference<>() {});
             PolicyUpdatedPayload payload = envelope.payload();
             String eventId = envelope.eventId();
 
             // payload/eventId/필수값 검증
-            if (!isValidPayload(payload, eventId, record)) {
+            if (!isValidPayload(payload, eventId, consumerRecord)) {
                 return;
             }
 
@@ -155,10 +155,10 @@ public class PolicyKafkaConsumer {
     }
 
     private boolean isValidPayload(
-            PolicyUpdatedPayload payload, String eventId, ConsumerRecord<String, String> record) {
+            PolicyUpdatedPayload payload, String eventId, ConsumerRecord<String, String> consumerRecord) {
         // payload가 없으면 종료
         if (payload == null) {
-            log.warn("policy-updated payload is null. recordKey={}", record.key());
+            log.warn("policy-updated payload is null. recordKey={}", consumerRecord.key());
             return false;
         }
 
