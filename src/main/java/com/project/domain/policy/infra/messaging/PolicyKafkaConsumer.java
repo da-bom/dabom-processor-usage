@@ -31,7 +31,7 @@ public class PolicyKafkaConsumer {
     @Value("${app.kafka.dedup.policy-ttl-seconds}")
     private long dedupTtlSeconds;
 
-    @KafkaListener(topics = "policy-updated", groupId = "policy-group")
+    @KafkaListener(topics = "policy-updated", groupId = "dabom-processor-usage-policy-group")
     public void consume(ConsumerRecord<String, String> record) {
         try {
             // 역직렬화
