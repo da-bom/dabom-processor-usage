@@ -86,6 +86,21 @@ public class PolicyKafkaConsumer {
 
             // targetCustomerId가 있으면 해당 customer만 반영
             if (targetCustomerId != null) {
+                // family-customer 소속 관계 검증
+                boolean isFamilyMember =
+                        familyMemberRepository.existsByFamilyIdAndCustomerIdAndDeletedAtIsNull(
+                                payload.familyId(), targetCustomerId);
+                if (!isFamilyMember) {
+                    log.warn(
+                            "Skip policy update due to invalid family-customer relation."
+                                    + " eventId={}, familyId={}, customerId={}, field={}",
+                            eventId,
+                            payload.familyId(),
+                            targetCustomerId,
+                            policyKey);
+                    return;
+                }
+
                 applyConstraintToCustomer(
                         payload.familyId(), targetCustomerId, policyKey, newValue);
                 log.info(
