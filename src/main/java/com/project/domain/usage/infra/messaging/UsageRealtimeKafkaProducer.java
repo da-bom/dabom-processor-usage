@@ -1,5 +1,6 @@
 package com.project.domain.usage.infra.messaging;
 
+import com.project.domain.usage.service.port.UsageRealtimeEventPublisher;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
@@ -12,7 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class UsageRealtimeKafkaProducer {
+public class UsageRealtimeKafkaProducer implements UsageRealtimeEventPublisher {
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
