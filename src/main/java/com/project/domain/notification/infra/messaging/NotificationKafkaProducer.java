@@ -3,6 +3,7 @@ package com.project.domain.notification.infra.messaging;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
+import com.project.domain.notification.service.port.NotificationEventPublisher;
 import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.notification.CustomerBlockedPayload;
 import com.project.global.event.dto.notification.NotificationPayload;
@@ -15,7 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class NotificationKafkaProducer {
+public class NotificationKafkaProducer implements NotificationEventPublisher {
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private static final String TOPIC = "notification-events";
