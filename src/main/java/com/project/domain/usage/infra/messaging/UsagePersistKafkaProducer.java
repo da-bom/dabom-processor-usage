@@ -17,10 +17,13 @@ public class UsagePersistKafkaProducer implements UsagePersistEventPublisher {
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
-    public void publish(UsagePersistPayload payload) {
-        EventEnvelope<UsagePersistPayload> envelope = EventEnvelope.of("USAGE_PERSIST", payload);
+    private static final String TOPIC = "usage-persist";
+    private static final String EVENT_TYPE = "USAGE_PERSIST";
 
-        kafkaTemplate.send("usage-persist", envelope);
+    public void publish(UsagePersistPayload payload) {
+        EventEnvelope<UsagePersistPayload> envelope = EventEnvelope.of(EVENT_TYPE, payload);
+
+        kafkaTemplate.send(TOPIC, envelope);
 
         log.info(
                 "Published UsagePersist event: {} (Family: {})",
