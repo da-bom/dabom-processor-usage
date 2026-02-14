@@ -35,6 +35,18 @@ public class RedisKeyGenerator {
                 + "monthly";
     }
 
+    public String generateFamilyCustomerConstraintsKey(Long familyId, Long customerId) {
+        return FAMILY_KEY_PREFIX
+                + KEY_SEPARATOR
+                + familyId
+                + KEY_SEPARATOR
+                + "customer"
+                + KEY_SEPARATOR
+                + customerId
+                + KEY_SEPARATOR
+                + "constraints";
+    }
+
     public String generateFamilyKey(Long familyId) {
         return FAMILY_KEY_PREFIX + KEY_SEPARATOR + familyId;
     }
