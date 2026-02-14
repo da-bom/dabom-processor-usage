@@ -17,10 +17,13 @@ public class UsageRealtimeKafkaProducer implements UsageRealtimeEventPublisher {
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
-    public void publish(UsageRealtimePayload payload) {
-        EventEnvelope<UsageRealtimePayload> envelope = EventEnvelope.of("USAGE_REALTIME", payload);
+    private static final String TOPIC = "usage-realtime";
+    private static final String EVENT_TYPE = "USAGE_REALTIME";
 
-        kafkaTemplate.send("usage-realtime", envelope);
+    public void publish(UsageRealtimePayload payload) {
+        EventEnvelope<UsageRealtimePayload> envelope = EventEnvelope.of(EVENT_TYPE, payload);
+
+        kafkaTemplate.send(TOPIC, envelope);
 
         log.debug(
                 "Published UsageRealtime event: {} (Family: {})",
