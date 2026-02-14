@@ -23,26 +23,18 @@ public class NotificationKafkaProducer implements NotificationEventPublisher {
 
     public void publish(NotificationPayload payload) {
 
-        var extraction =
+        String subType =
                 switch (payload) {
-                    case QuotaUpdatedPayload p -> new Extraction("QUOTA_UPDATED", p.familyId());
-                    case CustomerBlockedPayload p ->
-                            new Extraction("CUSTOMER_BLOCKED", p.familyId());
-                    case ThresholdAlertPayload p -> new Extraction("THRESHOLD_ALERT", p.familyId());
+                    case QuotaUpdatedPayload p -> "QUOTA_UPDATED";
+                    case CustomerBlockedPayload p -> "CUSTOMER_BLOCKED";
+                    case ThresholdAlertPayload p -> "THRESHOLD_ALERT";
                 };
 
         EventEnvelope<NotificationPayload> envelope =
-                EventEnvelope.of("NOTIFICATION", extraction.subType(), payload);
+                EventEnvelope.of("NOTIFICATION", subType, payload);
 
         kafkaTemplate.send(TOPIC, envelope);
 
-        log.info(
-                "Published Notification event: {} (Type: {}, Family: {})",
-                envelope.eventId(),
-                extraction.subType(),
-                extraction.familyId());
+        log.info("Published Notification event: {} (Type: {})", envelope.eventId(), subType);
     }
-
-    // 내부 처리를 위한 임시 Record
-    private record Extraction(String subType, Long familyId) {}
 }
