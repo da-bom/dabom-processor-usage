@@ -21,9 +21,9 @@
 
 <!-- 변경된 도메인/레이어를 표시해주세요. 해당 항목에 [x]로 체크해주세요. -->
 
-| 도메인 | web | application | core | infra |
-| :----: | :-: | :---------: | :--: | :---: |
-|        |     |             |      |       |
+| 도메인 | controller | service | repository | entity | infra | global |
+| :----: | :--------: | :-----: | :--------: | :----: | :---: | :----: |
+|        |            |         |            |        |       |        |
 
 ---
 
@@ -48,21 +48,16 @@
 **기본**
 - [ ] Merge 대상 브랜치가 올바른가?
 - [ ] `./gradlew build`가 정상적으로 통과하는가?
+- [ ] Spotless / Checkstyle을 통과하는가? (`./gradlew spotlessApply checkstyleMain`)
 - [ ] 전체 변경사항이 500줄을 넘지 않는가?
 
 **코드 품질**
-- [ ] Spotless / Checkstyle을 통과하는가? (`./gradlew spotlessApply checkstyleMain`)
-- [ ] 비즈니스 로직이 Service가 아닌 Domain(core)에 있는가?
+- [ ] 의존성 방향을 준수하는가? (`Controller → Service → Repository → Entity`)
 - [ ] Setter 없이 비즈니스 메서드로 상태를 변경하는가?
+- [ ] `@Transactional`은 Service에만 선언했는가?
 
 **테스트**
 - [ ] 신규 비즈니스 로직에 대한 단위 테스트를 작성했는가?
-- [ ] 기존 테스트가 모두 통과하는가?
-
-**아키텍처**
-- [ ] 의존성 방향을 준수하는가? (`Web → Application → Core ← Infra`)
-- [ ] core 패키지에 프레임워크 어노테이션(`@Entity`, `@Component` 등)이 없는가?
-- [ ] Repository가 Command/Query로 분리되어 있는가?
 
 ## 📌 참고 사항
 

@@ -7,9 +7,9 @@ import lombok.RequiredArgsConstructor;
 
 @Getter
 @RequiredArgsConstructor
-public enum GlobalErrorCode implements BaseErrorCode {
-    INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "GLOBAL_001", "서버 내부 오류가 발생했습니다"),
-    INVALID_INPUT_VALUE(HttpStatus.BAD_REQUEST, "GLOBAL_002", "입력 값이 올바르지 않습니다.");
+public enum FamilyErrorCode implements BaseErrorCode {
+    FAMILY_NOT_FOUND(HttpStatus.NOT_FOUND, "FAMILY_001", "가족 정보를 찾을 수 없습니다."),
+    FAMILY_INVALID_SEARCH_CONDITION(HttpStatus.BAD_REQUEST, "FAMILY_002", "가족 검색 조건이 올바르지 않습니다.");
 
     private final HttpStatus httpStatus;
     private final String customCode;

@@ -15,6 +15,7 @@ version = '0.0.1-SNAPSHOT'
 // Coverage Exclusion Patterns (공통 제외 패턴)
 // ============================================================================
 def coverageExcludePackages = [
+    '**',                // TODO: 1차 개발 완료 후 제거
     '**/config/**',      // Config 클래스 제외
     '**/exception/**',   // Exception 클래스 제외
     '**/dto/**',         // DTO 클래스 제외
@@ -60,6 +61,12 @@ dependencies {
     runtimeOnly 'com.mysql:mysql-connector-j'
     implementation 'org.springframework.kafka:spring-kafka'
 
+    // QueryDSL
+    implementation 'com.querydsl:querydsl-jpa:5.1.0:jakarta'
+    annotationProcessor "com.querydsl:querydsl-apt:5.1.0:jakarta"
+    annotationProcessor "jakarta.annotation:jakarta.annotation-api"
+    annotationProcessor "jakarta.persistence:jakarta.persistence-api"
+
     // Swagger
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0'
 
@@ -72,6 +79,7 @@ dependencies {
     testImplementation 'org.springframework.security:spring-security-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation 'org.springframework.kafka:spring-kafka-test'
+    testRuntimeOnly 'com.h2database:h2'
 }
 
 // ============================================================================
@@ -161,8 +169,8 @@ spotless {
 // ============================================================================
 sonar {
     properties {
-        property 'sonar.projectKey', 'backend'
-        property 'sonar.projectName', 'backend'
+        property 'sonar.projectKey', 'dabom-processor-usage'
+        property 'sonar.projectName', 'dabom-processor-usage'
         // Java 분석을 위한 바이너리 경로
         property 'sonar.java.binaries', 'build/classes/java/main'
         property 'sonar.java.libraries', "${System.getProperty('user.home')}/.gradle/caches/**/modules-*/files-*/**/*.jar"

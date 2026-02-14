@@ -40,6 +40,19 @@
        - 원본: ${suppressionFile}
        - 변경: ${config_loc}/checkstyle-suppressions.xml
        - 이유: Gradle configDirectory 설정 방식 사용 (Gradle 8.x+ 권장)
+
+    7. [braces-knr-style] RightCurly option을 alone_or_singleline으로 변경
+       - 원본: option=alone
+       - 변경: option=alone_or_singleline
+       - 이유: Spotless(Google Java Format)가 빈 클래스/메서드/생성자를 한 줄로 포맷함
+               예: public class Empty {}
+               alone_or_singleline은 한 줄 형태와 별도 줄 형태 모두 허용
+
+    8. [indentation] Java 14+ switch expression 들여쓰기 허용
+       - 원본: switch/case 들여쓰기를 엄격히 검사
+       - 변경: SuppressionSingleFilter로 switch/case 관련 Indentation 경고 제외
+       - 이유: Checkstyle Indentation 모듈이 switch expression 할당문의
+               들여쓰기를 올바르게 계산하지 못하는 알려진 한계
     ========================================================================
 -->
 
@@ -233,8 +246,17 @@ The following rules in the Naver coding convention cannot be checked by this con
             <message key="line.previous"
                      value="[braces-knr-style] ''{0}'' at column {1} should be on the previous line."/>
         </module>
+        <!--
+            [MODIFIED] [braces-knr-style] RightCurly option을 alone_or_singleline으로 변경
+            원본: option=alone
+            변경: option=alone_or_singleline
+            이유: Spotless(Google Java Format)가 빈 클래스/메서드/생성자를 한 줄로 포맷함
+                  예: public class Empty {}
+                  예: void empty() {}
+                  alone_or_singleline은 한 줄 형태와 별도 줄 형태 모두 허용
+        -->
         <module name="RightCurly">
-            <property name="option" value="alone"/>
+            <property name="option" value="alone_or_singleline"/>
             <property name="tokens" value="CLASS_DEF, METHOD_DEF, CTOR_DEF, LITERAL_FOR, LITERAL_WHILE, STATIC_INIT, INSTANCE_INIT"/>
             <message key="line.alone"
                      value="[braces-knr-style] ''{0}'' at column {1} should be alone on a line."/>
@@ -454,6 +476,16 @@ The following rules in the Naver coding convention cannot be checked by this con
             <property name="checkFormat" value=".*"/>
             <property name="influenceFormat" value="0"/>
         </module>
+    </module>
+
+    <!--
+        [MODIFIED] Java 14+ switch expression 들여쓰기 허용
+        Checkstyle Indentation 모듈이 switch expression을 할당문 우변에 사용할 때
+        들여쓰기를 잘못 계산하는 한계가 있어, switch/case 관련 경고만 선택적으로 제외
+    -->
+    <module name="SuppressionSingleFilter">
+        <property name="checks" value="Indentation"/>
+        <property name="message" value="^'(switch|case|switch rcurly)'.*"/>
     </module>
 
     <!-- Suppression -->
