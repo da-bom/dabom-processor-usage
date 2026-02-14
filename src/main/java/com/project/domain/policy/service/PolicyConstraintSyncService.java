@@ -20,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class PolicyConstraintSyncService {
+    private static final String VALUE_LOG_SUFFIX = ", value={}";
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;
     private final RedisKeyGenerator redisKeyGenerator;
@@ -63,8 +64,8 @@ public class PolicyConstraintSyncService {
                 && !newValue.isBlank()
                 && !policyEventValidator.isValidPolicyValue(policyKey, newValue)) {
             log.warn(
-                    "Invalid policy value. eventId={}, familyId={}, customerId={}, field={},"
-                            + " value={}",
+                    "Invalid policy value. eventId={}, familyId={}, customerId={}, field={}"
+                            + VALUE_LOG_SUFFIX,
                     eventId,
                     payload.familyId(),
                     targetCustomerId,
@@ -92,8 +93,8 @@ public class PolicyConstraintSyncService {
 
             applyConstraintToCustomer(payload.familyId(), targetCustomerId, policyKey, newValue);
             log.info(
-                    "Updated customer constraint. eventId={}, familyId={}, customerId={}, field={},"
-                            + " value={}",
+                    "Updated customer constraint. eventId={}, familyId={}, customerId={}, field={}"
+                            + VALUE_LOG_SUFFIX,
                     eventId,
                     payload.familyId(),
                     targetCustomerId,
@@ -111,8 +112,8 @@ public class PolicyConstraintSyncService {
         }
 
         log.info(
-                "Updated family-wide constraint. eventId={}, familyId={}, targetCount={}, field={},"
-                        + " value={}",
+                "Updated family-wide constraint. eventId={}, familyId={}, targetCount={}, field={}"
+                        + VALUE_LOG_SUFFIX,
                 eventId,
                 payload.familyId(),
                 customers.size(),
