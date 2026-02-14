@@ -37,4 +37,13 @@ public record EventEnvelope<T>(
         return new EventEnvelope<>(
                 UUID.randomUUID().toString(), eventType, null, LocalDateTime.now(), payload);
     }
+
+    public static <T> EventEnvelope<T> of(String eventType, String subType, T payload) {
+        return new EventEnvelope<>(
+                UUID.randomUUID().toString(),
+                eventType,
+                subType, // 지정한 값 삽입
+                LocalDateTime.now(),
+                payload);
+    }
 }
