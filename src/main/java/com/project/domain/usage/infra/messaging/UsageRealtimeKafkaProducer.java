@@ -21,6 +21,9 @@ public class UsageRealtimeKafkaProducer {
 
         kafkaTemplate.send("usage-realtime", envelope);
 
-        log.debug("Published UsageRealtime event: {} (Family: {})", envelope.eventId(), payload.familyId());
+        log.debug(
+                "Published UsageRealtime event: {} (Family: {})",
+                envelope.eventId(),
+                payload.familyId());
     }
 }

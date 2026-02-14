@@ -21,6 +21,9 @@ public class UsagePersistKafkaProducer {
 
         kafkaTemplate.send("usage-persist", envelope);
 
-        log.info("Published UsagePersist event: {} (Family: {})", envelope.eventId(), payload.familyId());
+        log.info(
+                "Published UsagePersist event: {} (Family: {})",
+                envelope.eventId(),
+                payload.familyId());
     }
 }
