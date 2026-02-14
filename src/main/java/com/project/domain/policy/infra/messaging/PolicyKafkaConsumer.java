@@ -155,7 +155,9 @@ public class PolicyKafkaConsumer {
     }
 
     private boolean isValidPayload(
-            PolicyUpdatedPayload payload, String eventId, ConsumerRecord<String, String> consumerRecord) {
+            PolicyUpdatedPayload payload,
+            String eventId,
+            ConsumerRecord<String, String> consumerRecord) {
         // payload가 없으면 종료
         if (payload == null) {
             log.warn("policy-updated payload is null. recordKey={}", consumerRecord.key());
