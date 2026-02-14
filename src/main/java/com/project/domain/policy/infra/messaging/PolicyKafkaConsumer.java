@@ -2,6 +2,7 @@ package com.project.domain.policy.infra.messaging;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 @RequiredArgsConstructor
 public class PolicyKafkaConsumer {
+    private static final Pattern HHMM_PATTERN = Pattern.compile("^\\d{4}$");
 
     private final ObjectMapper objectMapper;
     private final RedisTemplate<String, String> familyStringRedisTemplate;
@@ -88,6 +90,19 @@ public class PolicyKafkaConsumer {
 
             String newValue = payload.newValue();
             Long targetCustomerId = payload.targetCustomerId();
+            if (newValue != null && !newValue.isBlank()) {
+                if (!isValidPolicyValue(payload.policyKey(), newValue)) {
+                    log.warn(
+                            "Invalid policy value. eventId={}, familyId={}, customerId={},"
+                                    + " field={}, value={}",
+                            eventId,
+                            payload.familyId(),
+                            targetCustomerId,
+                            payload.policyKey(),
+                            newValue);
+                    return;
+                }
+            }
 
             // targetCustomerId != null: 해당하는 customer 정책 적용
             if (targetCustomerId != null) {
@@ -140,5 +155,44 @@ public class PolicyKafkaConsumer {
         }
         // newValue가 있으면 해당 policyKey 필드를 새 값으로 저장 (정책 갱신)
         familyStringRedisTemplate.opsForHash().put(constraintsKey, policyKey, newValue);
+    }
+
+    // value 값 검증
+    private boolean isValidPolicyValue(String policyKey, String newValue) {
+        if (policyKey == null || policyKey.isBlank()) {
+            return false;
+        }
+        if ("THROTTLE:SPEED".equals(policyKey)) {
+            return isPositiveLong(newValue);
+        }
+        if ("BLOCK:ACCESS".equals(policyKey) || policyKey.startsWith("BLOCK:APP:")) {
+            return "1".equals(newValue) || "0".equals(newValue);
+        }
+        if ("BLOCK:TIME:START".equals(policyKey) || "BLOCK:TIME:END".equals(policyKey)) {
+            return isValidHhmm(newValue);
+        }
+        if (policyKey.startsWith("LIMIT:DATA:")) {
+            return isPositiveLong(newValue);
+        }
+
+        // 알 수 없는 정책 키는 v1에서는 허용하지 않음
+        return false;
+    }
+
+    private boolean isPositiveLong(String value) {
+        try {
+            return Long.parseLong(value) > 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private boolean isValidHhmm(String value) {
+        if (!HHMM_PATTERN.matcher(value).matches()) {
+            return false;
+        }
+        int hh = Integer.parseInt(value.substring(0, 2));
+        int mm = Integer.parseInt(value.substring(2, 4));
+        return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59;
     }
 }
