@@ -80,3 +80,8 @@ logging:
     root: INFO
     org.springframework.web: INFO
     org.hibernate.SQL: WARN
+
+app:
+  kafka:
+    dedup:
+      usage-persist-ttl-seconds: ${USAGE_PERSIST_DEDUP_TTL_SECONDS:600}
