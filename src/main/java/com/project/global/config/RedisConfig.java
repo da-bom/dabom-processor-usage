@@ -1,9 +1,13 @@
 package com.project.global.config;
 
+import java.util.List;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
@@ -74,5 +78,14 @@ public class RedisConfig {
 
         template.afterPropertiesSet();
         return template;
+    }
+
+    @Bean
+    @SuppressWarnings("unchecked")
+    public DefaultRedisScript<List<String>> policyConstraintUpdateScript() {
+        DefaultRedisScript<List<String>> script = new DefaultRedisScript<>();
+        script.setLocation(new ClassPathResource("lua/policy_constraint_update.lua"));
+        script.setResultType((Class<List<String>>) (Class<?>) List.class);
+        return script;
     }
 }
