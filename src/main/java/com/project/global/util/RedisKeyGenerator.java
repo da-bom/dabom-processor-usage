@@ -8,6 +8,7 @@ public class RedisKeyGenerator {
     private static final String KEY_SEPARATOR = ":";
     private static final String EXAMPLE_KEY_PREFIX = "example";
     private static final String FAMILY_KEY_PREFIX = "family";
+    private static final String POLICY_EVENT_DEDUP_KEY_PREFIX = "event:dedup:policy";
     private static final String USAGE_PERSIST_EVENT_DEDUP_KEY_PREFIX = "event:dedup:usage-persist";
 
     public String generateExampleKey(Long exampleId) {
@@ -36,8 +37,26 @@ public class RedisKeyGenerator {
                 + "monthly";
     }
 
-    public String generateFamilyKey(Long familyId) {
-        return FAMILY_KEY_PREFIX + KEY_SEPARATOR + familyId;
+    public String generateFamilyCustomerConstraintsKey(Long familyId, Long customerId) {
+        return FAMILY_KEY_PREFIX
+                + KEY_SEPARATOR
+                + familyId
+                + KEY_SEPARATOR
+                + "customer"
+                + KEY_SEPARATOR
+                + customerId
+                + KEY_SEPARATOR
+                + "constraints";
+    }
+
+    public String generateFamilyCustomerConstraintsVersionKey(Long familyId, Long customerId) {
+        return generateFamilyCustomerConstraintsKey(familyId, customerId)
+                + KEY_SEPARATOR
+                + "version";
+    }
+
+    public String generatePolicyEventDedupKey(String eventId, Long customerId) {
+        return POLICY_EVENT_DEDUP_KEY_PREFIX + KEY_SEPARATOR + eventId + KEY_SEPARATOR + customerId;
     }
 
     public String generateUsagePersistEventDedupKey(String originEventId) {
