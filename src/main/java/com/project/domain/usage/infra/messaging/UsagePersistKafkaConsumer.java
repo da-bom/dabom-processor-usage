@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 public class UsagePersistKafkaConsumer {
     private static final String EVENT_TYPE_FIELD = "eventType";
     private static final String USAGE_PERSIST_EVENT_TYPE = "USAGE_PERSIST";
+    private static final int MAX_LOG_VALUE_LENGTH = 128;
 
     private final ObjectMapper objectMapper;
     private final UsagePersistService usagePersistService;
@@ -34,12 +35,12 @@ public class UsagePersistKafkaConsumer {
                 log.warn(
                         "Skip non-persist event on usage-persist topic. recordKey={}, eventType={}",
                         consumerRecord.key(),
-                        eventType);
+                        sanitizeForLog(eventType));
                 return;
             }
 
             EventEnvelope<UsagePersistPayload> envelope =
-                    objectMapper.readValue(consumerRecord.value(), new TypeReference<>() {});
+                    objectMapper.convertValue(root, new TypeReference<>() {});
             usagePersistService.persist(envelope, consumerRecord.key());
 
         } catch (JsonProcessingException e) {
@@ -47,5 +48,16 @@ public class UsagePersistKafkaConsumer {
         } catch (Exception e) {
             log.error("Failed to handle usage-persist event", e);
         }
+    }
+
+    private String sanitizeForLog(String raw) {
+        if (raw == null) {
+            return "null";
+        }
+        String sanitized = raw.replace('\r', '_').replace('\n', '_').replace('\t', '_');
+        if (sanitized.length() > MAX_LOG_VALUE_LENGTH) {
+            return sanitized.substring(0, MAX_LOG_VALUE_LENGTH) + "...";
+        }
+        return sanitized;
     }
 }

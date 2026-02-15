@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 public class PolicyKafkaConsumer {
     private static final String EVENT_TYPE_FIELD = "eventType";
     private static final String POLICY_UPDATED_EVENT_TYPE = "POLICY_UPDATED";
+    private static final int MAX_LOG_VALUE_LENGTH = 128;
 
     private final ObjectMapper objectMapper;
     private final PolicyConstraintSyncService policyConstraintSyncService;
@@ -34,17 +35,28 @@ public class PolicyKafkaConsumer {
                 log.warn(
                         "Skip non-policy event on policy-updated topic. recordKey={}, eventType={}",
                         consumerRecord.key(),
-                        eventType);
+                        sanitizeForLog(eventType));
                 return;
             }
 
             EventEnvelope<PolicyUpdatedPayload> envelope =
-                    objectMapper.readValue(consumerRecord.value(), new TypeReference<>() {});
+                    objectMapper.convertValue(root, new TypeReference<>() {});
             policyConstraintSyncService.sync(envelope, consumerRecord.key());
         } catch (JsonProcessingException e) {
             log.error("Failed to parse policy-updated payload", e);
         } catch (Exception e) {
             log.error("Failed to handle policy-updated event", e);
         }
+    }
+
+    private String sanitizeForLog(String raw) {
+        if (raw == null) {
+            return "null";
+        }
+        String sanitized = raw.replace('\r', '_').replace('\n', '_').replace('\t', '_');
+        if (sanitized.length() > MAX_LOG_VALUE_LENGTH) {
+            return sanitized.substring(0, MAX_LOG_VALUE_LENGTH) + "...";
+        }
+        return sanitized;
     }
 }
