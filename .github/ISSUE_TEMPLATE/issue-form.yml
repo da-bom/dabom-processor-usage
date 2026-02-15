@@ -4,10 +4,10 @@ title: '[DABOM-xxx] 작업에 대한 요약'
 
 body:
   - type: input
-    id: parentKey
+    id: issueKey
     attributes:
       label: '🎟️ 지라 티켓 (Ticket Number)'
-      description: 'Jira Ticket Number를 기입해주세요 (예: DABOM-56, DABOM-123)'
+      description: '해당 SubTask의 Jira Ticket Number를 기입해주세요 (예: DABOM-56, DABOM-123)'
       value: 'DABOM-xxx'
     validations:
       required: true
