@@ -1,10 +1,11 @@
 package com.project.domain.policy.service;
 
-import java.time.Duration;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
 import com.project.domain.family.entity.FamilyMember;
@@ -23,6 +24,7 @@ public class PolicyConstraintSyncService {
     private static final String VALUE_LOG_SUFFIX = ", value={}";
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;
+    private final RedisScript<List> policyConstraintUpdateScript;
     private final RedisKeyGenerator redisKeyGenerator;
     private final FamilyMemberRepository familyMemberRepository;
     private final PolicyEventValidator policyEventValidator;
@@ -39,14 +41,10 @@ public class PolicyConstraintSyncService {
             return;
         }
 
-        // 중복 이벤트는 스킵
-        if (isDuplicated(eventId)) {
-            return;
-        }
-
         String policyKey = payload.policyKey();
         String newValue = payload.newValue();
         Long targetCustomerId = payload.targetCustomerId();
+        long eventVersion = resolveEventVersion(envelope);
 
         // 삭제/갱신 모두 policyKey whitelist 검증
         if (!policyEventValidator.isAllowedPolicyKey(policyKey)) {
@@ -91,63 +89,112 @@ public class PolicyConstraintSyncService {
                 return;
             }
 
-            applyConstraintToCustomer(payload.familyId(), targetCustomerId, policyKey, newValue);
-            log.info(
-                    "Updated customer constraint. eventId={}, familyId={}, customerId={}, field={}"
-                            + VALUE_LOG_SUFFIX,
-                    eventId,
-                    payload.familyId(),
-                    targetCustomerId,
-                    policyKey,
-                    newValue);
+            String result =
+                    applyConstraintToCustomer(
+                            eventId,
+                            eventVersion,
+                            payload.familyId(),
+                            targetCustomerId,
+                            policyKey,
+                            newValue);
+            logResult(eventId, payload.familyId(), targetCustomerId, policyKey, newValue, result);
             return;
         }
 
         // targetCustomerId가 없으면 family 전체(active customer)에게 반영
         List<FamilyMember> customers =
                 familyMemberRepository.findAllByFamilyIdAndDeletedAtIsNull(payload.familyId());
+        int appliedCount = 0;
+        int skippedCount = 0;
         for (FamilyMember customer : customers) {
-            applyConstraintToCustomer(
-                    payload.familyId(), customer.getCustomerId(), policyKey, newValue);
+            String result =
+                    applyConstraintToCustomer(
+                            eventId,
+                            eventVersion,
+                            payload.familyId(),
+                            customer.getCustomerId(),
+                            policyKey,
+                            newValue);
+            if ("APPLIED".equals(result)) {
+                appliedCount++;
+            } else {
+                skippedCount++;
+            }
         }
 
         log.info(
-                "Updated family-wide constraint. eventId={}, familyId={}, targetCount={}, field={}"
+                "Processed family-wide constraint. eventId={}, familyId={}, appliedCount={},"
+                        + " skippedCount={}, field={}"
                         + VALUE_LOG_SUFFIX,
                 eventId,
                 payload.familyId(),
-                customers.size(),
+                appliedCount,
+                skippedCount,
                 policyKey,
                 newValue);
     }
 
-    private boolean isDuplicated(String eventId) {
-        String dedupKey = redisKeyGenerator.generatePolicyEventDedupKey(eventId);
-        Boolean firstSeen =
-                familyStringRedisTemplate
-                        .opsForValue()
-                        .setIfAbsent(dedupKey, "1", Duration.ofSeconds(dedupTtlSeconds));
-
-        if (!Boolean.TRUE.equals(firstSeen)) {
-            log.info("Skip duplicated policy-updated event. eventId={}", eventId);
-            return true;
-        }
-
-        return false;
-    }
-
-    private void applyConstraintToCustomer(
-            Long familyId, Long customerId, String policyKey, String newValue) {
+    private String applyConstraintToCustomer(
+            String eventId,
+            long eventVersion,
+            Long familyId,
+            Long customerId,
+            String policyKey,
+            String newValue) {
+        String dedupKey = redisKeyGenerator.generatePolicyEventDedupKey(eventId, customerId);
         String constraintsKey =
                 redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId);
-        applyConstraint(constraintsKey, policyKey, newValue);
+        String versionKey =
+                redisKeyGenerator.generateFamilyCustomerConstraintsVersionKey(familyId, customerId);
+        String normalizedNewValue = (newValue == null || newValue.isBlank()) ? "" : newValue;
+
+        List result =
+                familyStringRedisTemplate.execute(
+                        policyConstraintUpdateScript,
+                        List.of(dedupKey, constraintsKey, versionKey),
+                        String.valueOf(dedupTtlSeconds),
+                        policyKey,
+                        normalizedNewValue,
+                        String.valueOf(eventVersion));
+        if (result.isEmpty()) {
+            return "UNKNOWN";
+        }
+        return String.valueOf(result.getFirst());
     }
 
-    private void applyConstraint(String constraintsKey, String policyKey, String newValue) {
-        if (newValue == null || newValue.isBlank()) {
-            familyStringRedisTemplate.opsForHash().delete(constraintsKey, policyKey);
+    private long resolveEventVersion(EventEnvelope<PolicyUpdatedPayload> envelope) {
+        if (envelope.timestamp() == null) {
+            return System.currentTimeMillis();
+        }
+        return envelope.timestamp().toInstant(ZoneOffset.UTC).toEpochMilli();
+    }
+
+    private void logResult(
+            String eventId,
+            Long familyId,
+            Long customerId,
+            String policyKey,
+            String newValue,
+            String result) {
+        if ("APPLIED".equals(result)) {
+            log.info(
+                    "Updated customer constraint. eventId={}, familyId={}, customerId={}, field={}"
+                            + VALUE_LOG_SUFFIX,
+                    eventId,
+                    familyId,
+                    customerId,
+                    policyKey,
+                    newValue);
             return;
         }
-        familyStringRedisTemplate.opsForHash().put(constraintsKey, policyKey, newValue);
+
+        log.info(
+                "Skipped customer constraint update. eventId={}, familyId={}, customerId={},"
+                        + " field={}, reason={}",
+                eventId,
+                familyId,
+                customerId,
+                policyKey,
+                result);
     }
 }
