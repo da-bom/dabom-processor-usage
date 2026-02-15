@@ -1,6 +1,7 @@
 package com.project.domain.customer.repository;
 
 import java.time.LocalDate;
+import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -10,6 +11,9 @@ import org.springframework.data.repository.query.Param;
 import com.project.domain.customer.entity.CustomerQuota;
 
 public interface CustomerQuotaRepository extends JpaRepository<CustomerQuota, Long> {
+
+    Optional<CustomerQuota> findTopByFamilyIdAndCustomerIdAndDeletedAtIsNullOrderByCurrentMonthDesc(
+            Long familyId, Long customerId);
 
     @Modifying
     @Query(
