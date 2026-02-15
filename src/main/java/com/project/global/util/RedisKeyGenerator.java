@@ -9,6 +9,11 @@ public class RedisKeyGenerator {
     private static final String EXAMPLE_KEY_PREFIX = "example";
     private static final String FAMILY_KEY_PREFIX = "family";
     private static final String POLICY_EVENT_DEDUP_KEY_PREFIX = "event:dedup:policy";
+    private static final String EVENT_DEDUP_KEY_PREFIX = "event:dedup";
+
+    public String generateEventDedupKey(String uuid) {
+        return EVENT_DEDUP_KEY_PREFIX + KEY_SEPARATOR + uuid;
+    }
 
     public String generateExampleKey(Long exampleId) {
         return EXAMPLE_KEY_PREFIX + KEY_SEPARATOR + exampleId;
