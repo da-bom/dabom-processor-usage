@@ -32,6 +32,8 @@ public class UsagePersistService {
     private static final ZoneId KST = ZoneId.of(ASIA_SEOUL_TIME_ZONE);
     private static final Pattern LOG_DANGEROUS_PATTERN = Pattern.compile("[\\r\\n\\t]");
     private static final int MAX_LOG_VALUE_LENGTH = 128;
+    private static final String USAGE_PERSIST_LOG_SUFFIX =
+            " familyId={}, customerId={}, bytesUsed={}, currentMonth={}";
     private static final long ALLOWED_PAST_MONTHS = 1;
     private static final long ALLOWED_FUTURE_MONTHS = 0;
     private static final long SAFE_DEFAULT_MONTHLY_LIMIT_BYTES = 0L;
@@ -69,7 +71,7 @@ public class UsagePersistService {
         if (updatedRows > 0) {
             log.info(
                     "Persisted usage to existing quota row. eventId={}, originEventId={},"
-                            + " familyId={}, customerId={}, bytesUsed={}, currentMonth={}",
+                            + USAGE_PERSIST_LOG_SUFFIX,
                     safeEventId,
                     safeOriginEventId,
                     payload.familyId(),
@@ -102,7 +104,7 @@ public class UsagePersistService {
             if (retriedRows > 0) {
                 log.info(
                         "Recovered from concurrent insert race. eventId={}, originEventId={},"
-                                + " familyId={}, customerId={}, bytesUsed={}, currentMonth={}",
+                                + USAGE_PERSIST_LOG_SUFFIX,
                         safeEventId,
                         safeOriginEventId,
                         payload.familyId(),
@@ -116,7 +118,7 @@ public class UsagePersistService {
 
         log.info(
                 "Persisted usage by creating quota row. eventId={}, originEventId={},"
-                        + " familyId={}, customerId={}, bytesUsed={}, currentMonth={}",
+                        + USAGE_PERSIST_LOG_SUFFIX,
                 safeEventId,
                 safeOriginEventId,
                 payload.familyId(),
