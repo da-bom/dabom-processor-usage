@@ -24,7 +24,7 @@ public class PolicyConstraintSyncService {
     private static final String VALUE_LOG_SUFFIX = ", value={}";
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;
-    private final RedisScript<List> policyConstraintUpdateScript;
+    private final RedisScript<List<String>> policyConstraintUpdateScript;
     private final RedisKeyGenerator redisKeyGenerator;
     private final FamilyMemberRepository familyMemberRepository;
     private final PolicyEventValidator policyEventValidator;
@@ -148,7 +148,7 @@ public class PolicyConstraintSyncService {
                 redisKeyGenerator.generateFamilyCustomerConstraintsVersionKey(familyId, customerId);
         String normalizedNewValue = (newValue == null || newValue.isBlank()) ? "" : newValue;
 
-        List result =
+        List<String> result =
                 familyStringRedisTemplate.execute(
                         policyConstraintUpdateScript,
                         List.of(dedupKey, constraintsKey, versionKey),
@@ -156,10 +156,10 @@ public class PolicyConstraintSyncService {
                         policyKey,
                         normalizedNewValue,
                         String.valueOf(eventVersion));
-        if (result.isEmpty()) {
+        if (result == null || result.isEmpty()) {
             return "UNKNOWN";
         }
-        return String.valueOf(result.getFirst());
+        return String.valueOf(result.get(0));
     }
 
     private long resolveEventVersion(EventEnvelope<PolicyUpdatedPayload> envelope) {
