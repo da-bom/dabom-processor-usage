@@ -137,8 +137,7 @@ public class UsagePersistService {
                                     Duration.ofSeconds(usagePersistDedupTtlSeconds));
             if (!Boolean.TRUE.equals(firstSeen)) {
                 log.info(
-                        "Skip duplicated usage-persist event. originEventId={}",
-                        safeOriginEventId);
+                        "Skip duplicated usage-persist event. originEventId={}", safeOriginEventId);
                 return true;
             }
             return false;
@@ -159,9 +158,9 @@ public class UsagePersistService {
         try {
             LocalDate parsedMonth =
                     OffsetDateTime.parse(eventTime)
-                    .atZoneSameInstant(KST)
-                    .toLocalDate()
-                    .withDayOfMonth(1);
+                            .atZoneSameInstant(KST)
+                            .toLocalDate()
+                            .withDayOfMonth(1);
             if (isOutsideAllowedMonthWindow(parsedMonth, currentMonth)) {
                 log.warn(
                         "Suspicious eventTime month. Fallback to current month. eventTime={},"
