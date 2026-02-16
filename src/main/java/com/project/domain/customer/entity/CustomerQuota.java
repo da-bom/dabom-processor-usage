@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 import com.project.global.util.BaseEntity;
 
@@ -17,7 +18,13 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "customer_quota")
+@Table(
+        name = "customer_quota",
+        uniqueConstraints = {
+            @UniqueConstraint(
+                    name = "uk_customer_quota_family_customer_month",
+                    columnNames = {"family_id", "customer_id", "current_month"})
+        })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class CustomerQuota extends BaseEntity {
