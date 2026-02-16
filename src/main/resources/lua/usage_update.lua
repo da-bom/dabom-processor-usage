@@ -67,7 +67,10 @@ local status = "NORMAL"
 if newRemaining <= 0 then
     status = "BLOCKED_FAMILY"
 else
-    local ratio = newRemaining / totalLimit
+    local ratio = 0
+    if totalLimit > 0 then
+        ratio = newRemaining / totalLimit
+    end
 
     -- 현재 도달한 경고 레벨 식별
     local alertLevel = nil
