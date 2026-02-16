@@ -27,6 +27,7 @@ public class UsagePersistKafkaConsumer {
     @KafkaListener(topics = "usage-persist", groupId = "dabom-processor-usage-persistence-group")
     public void consume(ConsumerRecord<String, String> consumerRecord) {
         try {
+            // 메시지에서 eventType 확인 후 정상 메시지만 변환
             JsonNode root = kafkaEventMessageSupport.readTree(consumerRecord.value());
             String eventType = kafkaEventMessageSupport.extractEventType(root);
             if (!USAGE_PERSIST_EVENT_TYPE.equals(eventType)) {

@@ -53,15 +53,20 @@ public class UsagePersistService {
         String safeEventId = sanitizeForLog(eventId);
         String safeOriginEventId = sanitizeForLog(payload == null ? null : payload.originEventId());
 
+        // payload 검증
         if (!usagePersistEventValidator.isValidPayload(payload, eventId, recordKey)) {
             return;
         }
 
+        // 중복 이벤트 차단
         if (isDuplicated(payload.originEventId(), safeOriginEventId)) {
             return;
         }
 
+        // eventType으로 KST 월(yyyy-MM-01) 계산
         LocalDate currentMonth = resolveCurrentMonth(payload.eventTime());
+
+        // DB update 먼저 수행
         int updatedRows =
                 customerQuotaRepository.incrementMonthlyUsedBytes(
                         payload.familyId(),
@@ -81,6 +86,7 @@ public class UsagePersistService {
             return;
         }
 
+        // update 0건이면 insert
         long monthlyLimitBytes = resolveMonthlyLimitBytes(payload.familyId(), payload.customerId());
         CustomerQuota customerQuota =
                 CustomerQuota.builder()
@@ -95,6 +101,7 @@ public class UsagePersistService {
         try {
             customerQuotaRepository.saveAndFlush(customerQuota);
         } catch (DataIntegrityViolationException e) {
+            // insert 경합시 실패한 쪽 이벤트 update 재시도
             int retriedRows =
                     customerQuotaRepository.incrementMonthlyUsedBytes(
                             payload.familyId(),
@@ -158,6 +165,7 @@ public class UsagePersistService {
             return currentMonth;
         }
         try {
+            // eventTime이 과도한 과거/미래 월이면 현재 월 fallback (past=1, future=0)
             LocalDate parsedMonth =
                     OffsetDateTime.parse(eventTime)
                             .atZoneSameInstant(KST)
@@ -202,6 +210,7 @@ public class UsagePersistService {
     }
 
     private long resolveMonthlyLimitBytes(Long familyId, Long customerId) {
+        // 이번 달 row가 없어서 insert할때 과거 row 중 가장 최신 monthlyLimitBytes를 넣음
         return customerQuotaRepository
                 .findTopByFamilyIdAndCustomerIdAndDeletedAtIsNullOrderByCurrentMonthDesc(
                         familyId, customerId)
