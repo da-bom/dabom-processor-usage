@@ -22,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class PolicyConstraintSyncService {
     private static final String VALUE_LOG_SUFFIX = ", value={}";
+    private static final int MAX_LOG_VALUE_LENGTH = 128;
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;
     private final RedisScript<List<String>> policyConstraintUpdateScript;
@@ -146,18 +147,40 @@ public class PolicyConstraintSyncService {
                 redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId);
         String normalizedNewValue = (newValue == null || newValue.isBlank()) ? "" : newValue;
 
-        List<String> result =
-                familyStringRedisTemplate.execute(
-                        policyConstraintUpdateScript,
-                        List.of(dedupKey, constraintsKey),
-                        String.valueOf(dedupTtlSeconds),
-                        policyKey,
-                        normalizedNewValue,
-                        String.valueOf(eventVersion));
-        if (result == null || result.isEmpty()) {
-            return "UNKNOWN";
+        List<String> result;
+        try {
+            result =
+                    familyStringRedisTemplate.execute(
+                            policyConstraintUpdateScript,
+                            List.of(dedupKey, constraintsKey),
+                            String.valueOf(dedupTtlSeconds),
+                            policyKey,
+                            normalizedNewValue,
+                            String.valueOf(eventVersion));
+        } catch (Exception e) {
+            log.error(
+                    "Failed to sync policy constraint to Redis. eventId={}, familyId={},"
+                            + " customerId={}, field={}"
+                            + VALUE_LOG_SUFFIX,
+                    sanitizeForLog(eventId),
+                    familyId,
+                    customerId,
+                    sanitizeForLog(policyKey),
+                    sanitizeForLog(newValue),
+                    e);
+            throw e;
         }
-        return String.valueOf(result.get(0));
+        if (result == null || result.isEmpty()) {
+            log.error(
+                    "Invalid Redis Lua result. eventId={}, familyId={}, customerId={}, field={}",
+                    sanitizeForLog(eventId),
+                    familyId,
+                    customerId,
+                    sanitizeForLog(policyKey));
+            throw new IllegalStateException("Redis Lua returned empty result");
+        }
+
+        return result.get(0);
     }
 
     private long resolveEventVersion(EventEnvelope<PolicyUpdatedPayload> envelope) {
@@ -194,5 +217,16 @@ public class PolicyConstraintSyncService {
                 customerId,
                 policyKey,
                 result);
+    }
+
+    private String sanitizeForLog(String raw) {
+        if (raw == null) {
+            return "null";
+        }
+        String sanitized = raw.replace('\r', '_').replace('\n', '_').replace('\t', '_');
+        if (sanitized.length() > MAX_LOG_VALUE_LENGTH) {
+            return sanitized.substring(0, MAX_LOG_VALUE_LENGTH) + "...";
+        }
+        return sanitized;
     }
 }
