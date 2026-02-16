@@ -11,8 +11,8 @@ public class RedisKeyGenerator {
     private static final String POLICY_EVENT_DEDUP_KEY_PREFIX = "event:dedup:policy";
     private static final String EVENT_DEDUP_KEY_PREFIX = "event:dedup";
 
-    public String generateEventDedupKey(String uuid) {
-        return EVENT_DEDUP_KEY_PREFIX + KEY_SEPARATOR + uuid;
+    public String generateFamilyAlertsKey(Long familyId) {
+        return FAMILY_KEY_PREFIX + KEY_SEPARATOR + familyId + KEY_SEPARATOR + "alerts";
     }
 
     public String generateExampleKey(Long exampleId) {

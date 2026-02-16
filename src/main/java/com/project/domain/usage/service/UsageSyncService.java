@@ -2,10 +2,10 @@ package com.project.domain.usage.service;
 
 import java.util.List;
 
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.project.domain.notification.infra.messaging.NotificationKafkaProducer;
 import com.project.domain.usage.infra.messaging.UsagePersistKafkaProducer;
@@ -36,36 +36,59 @@ public class UsageSyncService {
     // Lua Script
     private final RedisScript<List<Object>> usageUpdateScript;
 
+    @Transactional
     public void syncUsage(String eventId, String eventTime, UsagePayload payload) {
-        long familyId = payload.familyId();
 
-        // 1. Redis Key 생성
+        Long familyId = payload.familyId();
+        Long customerId = payload.customerId();
+        long usageBytes = payload.bytesUsed();
+
+        // Redis Key 생성
         String infoKey = redisKeyGenerator.generateFamilyInfoKey(familyId);
         String remainingKey = redisKeyGenerator.generateFamilyRemainingKey(familyId);
+        String monthlyKey =
+                redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(familyId, customerId);
+        String constraintsKey =
+                redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId);
+        String alertsKey = redisKeyGenerator.generateFamilyAlertsKey(familyId);
 
-        // 2. Lua Script 실행 (Atomic Update)
-        // KEYS: [info, remaining], ARGV: [usageBytes]
-        // Result: [totalUsed(Long), remaining(Long), status(String)]
+        // Lua Script 실행
         List<Object> result =
                 redisTemplate.execute(
                         usageUpdateScript,
-                        List.of(infoKey, remainingKey),
-                        String.valueOf(payload.bytesUsed()));
+                        List.of(infoKey, remainingKey, monthlyKey, constraintsKey, alertsKey),
+                        String.valueOf(usageBytes));
+        if (result == null || result.isEmpty()) {
+            log.error("Usage update script returned null. eventId={}", eventId);
+            return;
+        }
 
-        // 3. 결과 파싱
+        // 결과 파싱
         long totalUsed = ((Number) result.get(0)).longValue();
         long remaining = ((Number) result.get(1)).longValue();
         String status = (String) result.get(2);
+        long monthlyUsed = ((Number) result.get(3)).longValue();
 
-        log.debug(
-                "Usage Synced: family={}, used={}, remain={}, status={}",
-                familyId,
+        Object userRatioObj = result.get(4);
+        double userRatio =
+                (userRatioObj instanceof Number)
+                        ? ((Number) userRatioObj).doubleValue()
+                        : Double.parseDouble(userRatioObj.toString());
+
+        long monthlyLimit = ((Number) result.get(5)).longValue();
+        log.debug("Usage Synced: family={}, customer={}, status={}", familyId, customerId, status);
+
+        // 이벤트 전파
+        publishEvents(
+                eventId,
+                eventTime,
+                payload,
                 totalUsed,
                 remaining,
-                status);
-
-        // 4. 이벤트 전파
-        publishEvents(eventId, eventTime, payload, totalUsed, remaining, status);
+                status,
+                monthlyUsed,
+                userRatio,
+                monthlyLimit);
     }
 
     private void publishEvents(
@@ -74,42 +97,52 @@ public class UsageSyncService {
             UsagePayload payload,
             long totalUsed,
             long remaining,
-            String status) {
+            String status,
+            long monthlyUsed,
+            double userRatio,
+            long monthlyLimit) {
 
         long familyId = payload.familyId();
+        long customerId = payload.customerId();
         long totalLimit = totalUsed + remaining;
         double usedPercent = totalLimit > 0 ? (double) totalUsed / totalLimit * 100.0 : 0.0;
 
-        // DB 저장 이벤트 발행
+        // DB 저장 이벤트 (Persist)
         persistProducer.publish(
                 new UsagePersistPayload(
                         eventId,
                         familyId,
-                        payload.customerId(),
+                        customerId,
                         payload.bytesUsed(),
                         payload.appId(),
-                        "BLOCKED".equals(status) ? "BLOCKED" : "ALLOWED",
+                        status.startsWith("BLOCKED") ? "BLOCKED" : "ALLOWED",
                         remaining,
                         eventTime));
 
-        // 사용량 실시간 업데이트 이벤트 발행
+        // 실시간 사용량 이벤트 (Realtime)
         realtimeProducer.publish(
-                new UsageRealtimePayload(familyId, totalUsed, totalLimit, remaining, usedPercent));
+                new UsageRealtimePayload(
+                        familyId,
+                        customerId,
+                        totalUsed,
+                        totalLimit,
+                        remaining,
+                        usedPercent,
+                        monthlyUsed,
+                        userRatio * 100.0,
+                        monthlyLimit));
 
-        // 상태에 따른 알림 발송 이벤트 발행
+        // 알림 이벤트 (Notification)
         if (status.startsWith("WARNING")) {
-
             int percent = parsePercent(status);
-
             notificationProducer.publish(
                     new ThresholdAlertPayload(
-                            familyId,
-                            percent, // 예: 10
-                            "가족 데이터가 " + percent + "% 미만입니다!"));
-        } else if ("BLOCKED".equals(status)) {
+                            familyId, percent, "가족 데이터가 " + percent + "% 미만입니다!"));
+
+        } else if (status.startsWith("BLOCKED")) {
+            // reason: BLOCKED_ACCESS, BLOCKED_LIMIT_MONTHLY, BLOCKED_FAMILY_QUOTA
             notificationProducer.publish(
-                    new CustomerBlockedPayload(
-                            familyId, payload.customerId(), "LIMIT:DATA:MONTHLY", eventTime));
+                    new CustomerBlockedPayload(familyId, customerId, status, eventTime));
         }
     }
 

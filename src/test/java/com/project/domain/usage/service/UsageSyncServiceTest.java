@@ -56,12 +56,18 @@ class UsageSyncServiceTest {
         String eventTime = LocalDateTime.now().toString();
         UsagePayload payload = new UsagePayload(eventId, 100L, 1L, "appId", 1024L, Map.of());
 
+        // Key Mocking
         given(redisKeyGenerator.generateFamilyInfoKey(100L)).willReturn("family:100:info");
         given(redisKeyGenerator.generateFamilyRemainingKey(100L))
                 .willReturn("family:100:remaining");
+        given(redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(100L, 1L))
+                .willReturn("monthlyKey");
+        given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L))
+                .willReturn("constraintsKey");
+        given(redisKeyGenerator.generateFamilyAlertsKey(100L)).willReturn("alertsKey");
 
-        // Mock Lua Script Result: [totalUsed, remaining, status]
-        List<Object> scriptResult = List.of(5000L, 5000L, "NORMAL");
+        // Mock Lua Result: [totalUsed, remaining, status, monthlyUsed, userRatio, monthlyLimit]
+        List<Object> scriptResult = List.of(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L);
 
         // RedisTemplate execute mocking
         // 주의: varargs 매칭 등 까다로운 부분은 any() 사용 권장
@@ -94,9 +100,15 @@ class UsageSyncServiceTest {
         given(redisKeyGenerator.generateFamilyInfoKey(100L)).willReturn("family:100:info");
         given(redisKeyGenerator.generateFamilyRemainingKey(100L))
                 .willReturn("family:100:remaining");
+        given(redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(100L, 1L))
+                .willReturn("monthlyKey");
+        given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L))
+                .willReturn("constraintsKey");
+        given(redisKeyGenerator.generateFamilyAlertsKey(100L)).willReturn("alertsKey");
 
         // Status: WARNING_10 (10% 남음)
-        List<Object> scriptResult = List.of(9000L, 1000L, "WARNING_10");
+        // [totalUsed, remaining, status, monthlyUsed, userRatio, monthlyLimit]
+        List<Object> scriptResult = List.of(9000L, 1000L, "WARNING_10", 2000L, 0.2, 10000L);
 
         given(redisTemplate.execute(eq(usageUpdateScript), anyList(), any(Object.class)))
                 .willReturn(scriptResult);
@@ -119,9 +131,16 @@ class UsageSyncServiceTest {
         given(redisKeyGenerator.generateFamilyInfoKey(100L)).willReturn("family:100:info");
         given(redisKeyGenerator.generateFamilyRemainingKey(100L))
                 .willReturn("family:100:remaining");
+        given(redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(100L, 1L))
+                .willReturn("monthlyKey");
+        given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L))
+                .willReturn("constraintsKey");
+        given(redisKeyGenerator.generateFamilyAlertsKey(100L)).willReturn("alertsKey");
 
-        // Status: BLOCKED
-        List<Object> scriptResult = List.of(10000L, 0L, "BLOCKED");
+        // Status: BLOCKED_LIMIT_MONTHLY
+        // [totalUsed, remaining, status, monthlyUsed, userRatio, monthlyLimit]
+        List<Object> scriptResult =
+                List.of(8000L, 2000L, "BLOCKED_LIMIT_MONTHLY", 10001L, 1.0, 10000L);
 
         given(redisTemplate.execute(eq(usageUpdateScript), anyList(), any(Object.class)))
                 .willReturn(scriptResult);
