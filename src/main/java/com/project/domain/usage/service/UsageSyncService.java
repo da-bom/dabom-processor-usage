@@ -5,7 +5,6 @@ import java.util.List;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.project.domain.notification.infra.messaging.NotificationKafkaProducer;
 import com.project.domain.usage.infra.messaging.UsagePersistKafkaProducer;
