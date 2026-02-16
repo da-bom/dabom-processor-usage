@@ -31,7 +31,8 @@ public class UsageEventsConsumer {
             // JSON 역직렬화
             EventEnvelope<UsagePayload> envelope =
                     objectMapper.readValue(
-                            consumerRecord.value(), new TypeReference<EventEnvelope<UsagePayload>>() {});
+                            consumerRecord.value(),
+                            new TypeReference<EventEnvelope<UsagePayload>>() {});
 
             eventId = envelope.eventId();
             UsagePayload payload = envelope.payload();
