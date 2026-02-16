@@ -36,7 +36,6 @@ public class UsageSyncService {
     // Lua Script
     private final RedisScript<List<Object>> usageUpdateScript;
 
-    @Transactional
     public void syncUsage(String eventId, String eventTime, UsagePayload payload) {
 
         Long familyId = payload.familyId();
