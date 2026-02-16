@@ -69,8 +69,8 @@ public class UsageSyncService {
 
         Object userRatioObj = result.get(4);
         double userRatio =
-                (userRatioObj instanceof Number)
-                        ? ((Number) userRatioObj).doubleValue()
+                (userRatioObj instanceof Number number)
+                        ? number.doubleValue()
                         : Double.parseDouble(userRatioObj.toString());
 
         long monthlyLimit = ((Number) result.get(5)).longValue();
