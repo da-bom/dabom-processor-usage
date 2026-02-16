@@ -12,6 +12,8 @@ import com.project.domain.family.entity.FamilyMember;
 import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.policy.PolicyUpdatedPayload;
+import com.project.global.exception.ApplicationException;
+import com.project.global.exception.code.PolicyErrorCode;
 import com.project.global.util.RedisKeyGenerator;
 
 import lombok.RequiredArgsConstructor;
@@ -168,7 +170,7 @@ public class PolicyConstraintSyncService {
                     sanitizeForLog(policyKey),
                     sanitizeForLog(newValue),
                     e);
-            throw e;
+            throw new ApplicationException(PolicyErrorCode.POLICY_REDIS_SYNC_FAILED);
         }
         if (result == null || result.isEmpty()) {
             log.error(
@@ -177,7 +179,7 @@ public class PolicyConstraintSyncService {
                     familyId,
                     customerId,
                     sanitizeForLog(policyKey));
-            throw new IllegalStateException("Redis Lua returned empty result");
+            throw new ApplicationException(PolicyErrorCode.POLICY_REDIS_INVALID_RESULT);
         }
 
         return result.get(0);
