@@ -25,6 +25,12 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class UsageSyncService {
 
+    private static final String STATUS_BLOCKED_PREFIX = "BLOCKED";
+    private static final String STATUS_WARNING_PREFIX = "WARNING";
+
+    private static final String PERSIST_STATUS_BLOCKED = "BLOCKED";
+    private static final String PERSIST_STATUS_ALLOWED = "ALLOWED";
+
     private final StringRedisTemplate redisTemplate;
     private final RedisKeyGenerator redisKeyGenerator;
 
@@ -100,7 +106,9 @@ public class UsageSyncService {
                         customerId,
                         payload.bytesUsed(),
                         payload.appId(),
-                        status.startsWith("BLOCKED") ? "BLOCKED" : "ALLOWED",
+                        status.startsWith(STATUS_BLOCKED_PREFIX)
+                                ? PERSIST_STATUS_BLOCKED
+                                : PERSIST_STATUS_ALLOWED,
                         remaining,
                         ctx.eventTime()));
 
@@ -118,13 +126,13 @@ public class UsageSyncService {
                         monthlyLimit));
 
         // 알림 이벤트 (Notification)
-        if (status.startsWith("WARNING")) {
+        if (status.startsWith(STATUS_WARNING_PREFIX)) {
             int percent = parsePercent(status);
             notificationProducer.publish(
                     new ThresholdAlertPayload(
                             familyId, percent, "가족 데이터가 " + percent + "% 미만입니다!"));
 
-        } else if (status.startsWith("BLOCKED")) {
+        } else if (status.startsWith(STATUS_BLOCKED_PREFIX)) {
             // reason: BLOCKED_ACCESS, BLOCKED_LIMIT_MONTHLY, BLOCKED_FAMILY_QUOTA
             notificationProducer.publish(
                     new CustomerBlockedPayload(familyId, customerId, status, ctx.eventTime()));
