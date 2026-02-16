@@ -48,12 +48,6 @@ public class RedisKeyGenerator {
                 + "constraints";
     }
 
-    public String generateFamilyCustomerConstraintsVersionKey(Long familyId, Long customerId) {
-        return generateFamilyCustomerConstraintsKey(familyId, customerId)
-                + KEY_SEPARATOR
-                + "version";
-    }
-
     public String generatePolicyEventDedupKey(String eventId, Long customerId) {
         return POLICY_EVENT_DEDUP_KEY_PREFIX + KEY_SEPARATOR + eventId + KEY_SEPARATOR + customerId;
     }

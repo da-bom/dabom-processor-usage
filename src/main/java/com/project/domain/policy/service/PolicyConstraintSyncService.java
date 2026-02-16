@@ -144,14 +144,12 @@ public class PolicyConstraintSyncService {
         String dedupKey = redisKeyGenerator.generatePolicyEventDedupKey(eventId, customerId);
         String constraintsKey =
                 redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId);
-        String versionKey =
-                redisKeyGenerator.generateFamilyCustomerConstraintsVersionKey(familyId, customerId);
         String normalizedNewValue = (newValue == null || newValue.isBlank()) ? "" : newValue;
 
         List<String> result =
                 familyStringRedisTemplate.execute(
                         policyConstraintUpdateScript,
-                        List.of(dedupKey, constraintsKey, versionKey),
+                        List.of(dedupKey, constraintsKey),
                         String.valueOf(dedupTtlSeconds),
                         policyKey,
                         normalizedNewValue,
