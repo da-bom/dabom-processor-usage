@@ -70,7 +70,8 @@ class UsageEventsConsumerTest {
     void consume_InvalidPayload() throws JsonProcessingException {
         // given
         String json = "{\"eventId\":\"evt_invalid\", ...}";
-        ConsumerRecord<String, String> record = new ConsumerRecord<>("topic", 0, 0L, "key", json);
+        ConsumerRecord<String, String> consumerRecord =
+                new ConsumerRecord<>("topic", 0, 0L, "key", json);
 
         EventEnvelope<UsagePayload> envelope =
                 EventEnvelope.of(
@@ -82,7 +83,7 @@ class UsageEventsConsumerTest {
         given(validator.isValid(any(UsagePayload.class), anyString())).willReturn(false);
 
         // when
-        consumer.consume(record);
+        consumer.consume(consumerRecord);
 
         // then
         verify(usageSyncService, never()).syncUsage(any(), any(), any());
@@ -93,14 +94,14 @@ class UsageEventsConsumerTest {
     void consume_DeserializationError() throws JsonProcessingException {
         // given
         String invalidJson = "invalid-json";
-        ConsumerRecord<String, String> record =
+        ConsumerRecord<String, String> consumerRecord =
                 new ConsumerRecord<>("topic", 0, 0L, "key", invalidJson);
 
         given(objectMapper.readValue(eq(invalidJson), any(TypeReference.class)))
                 .willThrow(new RuntimeException("JSON Error"));
 
         // when
-        consumer.consume(record);
+        consumer.consume(consumerRecord);
 
         // then
         verify(usageSyncService, never()).syncUsage(any(), any(), any());
