@@ -85,3 +85,4 @@ app:
   kafka:
     dedup:
       policy-ttl-seconds: ${POLICY_DEDUP_TTL_SECONDS:3600}
+      usage-persist-ttl-seconds: ${USAGE_PERSIST_DEDUP_TTL_SECONDS:600}
