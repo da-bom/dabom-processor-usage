@@ -24,14 +24,14 @@ public class UsageEventsConsumer {
     private final UsageEventValidator validator;
 
     @KafkaListener(topics = "usage-events", groupId = "dabom-processor-usage")
-    public void consume(ConsumerRecord<String, String> record) {
+    public void consume(ConsumerRecord<String, String> consumerRecord) {
         String eventId = "unknown";
 
         try {
             // JSON 역직렬화
             EventEnvelope<UsagePayload> envelope =
                     objectMapper.readValue(
-                            record.value(), new TypeReference<EventEnvelope<UsagePayload>>() {});
+                            consumerRecord.value(), new TypeReference<EventEnvelope<UsagePayload>>() {});
 
             eventId = envelope.eventId();
             UsagePayload payload = envelope.payload();
@@ -40,12 +40,12 @@ public class UsageEventsConsumer {
             if (!validator.isValid(payload, eventId)) {
                 log.warn(
                         "Skipping invalid usage event. Key: {}, EventId: {}",
-                        record.key(),
+                        consumerRecord.key(),
                         eventId);
                 return;
             }
 
-            log.debug("Consumed usage event: {} (Key: {})", eventId, record.key());
+            log.debug("Consumed usage event: {} (Key: {})", eventId, consumerRecord.key());
 
             // 비즈니스 로직 위임
             usageSyncService.syncUsage(eventId, envelope.timestamp().toString(), payload);
@@ -53,7 +53,7 @@ public class UsageEventsConsumer {
             // 에러 발생 시 로그만 남기고 넘김
             log.error(
                     "Failed to process usage event [Key: {}, EventId: {}]: {}",
-                    record.key(),
+                    consumerRecord.key(),
                     eventId,
                     e.getMessage(),
                     e);
