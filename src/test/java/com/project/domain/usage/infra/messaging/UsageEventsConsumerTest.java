@@ -42,7 +42,8 @@ class UsageEventsConsumerTest {
     void consume_ValidMessage() throws JsonProcessingException {
         // given
         String json = "{\"eventId\":\"evt_1\", ...}";
-        ConsumerRecord<String, String> record = new ConsumerRecord<>("topic", 0, 0L, "key", json);
+        ConsumerRecord<String, String> consumerRecord =
+                new ConsumerRecord<>("topic", 0, 0L, "key", json);
 
         EventEnvelope<UsagePayload> envelope =
                 EventEnvelope.of(
@@ -54,7 +55,7 @@ class UsageEventsConsumerTest {
         given(validator.isValid(any(UsagePayload.class), anyString())).willReturn(true);
 
         // when
-        consumer.consume(record);
+        consumer.consume(consumerRecord);
 
         // then
         verify(usageSyncService, times(1))
