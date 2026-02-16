@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import com.project.domain.notification.infra.messaging.NotificationKafkaProducer;
 import com.project.domain.usage.infra.messaging.UsagePersistKafkaProducer;
 import com.project.domain.usage.infra.messaging.UsageRealtimeKafkaProducer;
+import com.project.domain.usage.service.dto.UsageUpdateResult;
 import com.project.global.event.dto.notification.CustomerBlockedPayload;
 import com.project.global.event.dto.notification.ThresholdAlertPayload;
 import com.project.global.event.dto.usage.UsagePayload;
@@ -61,61 +62,47 @@ public class UsageSyncService {
             return;
         }
 
-        // 결과 파싱
-        long totalUsed = ((Number) result.get(0)).longValue();
-        long remaining = ((Number) result.get(1)).longValue();
-        String status = (String) result.get(2);
-        long monthlyUsed = ((Number) result.get(3)).longValue();
+        UsageUpdateResult parsed = parseScriptResult(result, eventId);
+        log.debug(
+                "Usage Synced: family={}, customer={}, status={}",
+                familyId,
+                customerId,
+                parsed.status());
 
-        Object userRatioObj = result.get(4);
-        double userRatio =
-                (userRatioObj instanceof Number number)
-                        ? number.doubleValue()
-                        : Double.parseDouble(userRatioObj.toString());
-
-        long monthlyLimit = ((Number) result.get(5)).longValue();
-        log.debug("Usage Synced: family={}, customer={}, status={}", familyId, customerId, status);
+        UsageSyncContext ctx = new UsageSyncContext(eventId, eventTime, payload, parsed);
 
         // 이벤트 전파
-        publishEvents(
-                eventId,
-                eventTime,
-                payload,
-                totalUsed,
-                remaining,
-                status,
-                monthlyUsed,
-                userRatio,
-                monthlyLimit);
+        publishEvents(ctx);
     }
 
-    private void publishEvents(
-            String eventId,
-            String eventTime,
-            UsagePayload payload,
-            long totalUsed,
-            long remaining,
-            String status,
-            long monthlyUsed,
-            double userRatio,
-            long monthlyLimit) {
+    private void publishEvents(UsageSyncContext ctx) {
+
+        UsagePayload payload = ctx.payload();
 
         long familyId = payload.familyId();
         long customerId = payload.customerId();
+
+        long totalUsed = ctx.result().totalUsed();
+        long remaining = ctx.result().remaining();
+        String status = ctx.result().status();
+        long monthlyUsed = ctx.result().monthlyUsed();
+        double userRatio = ctx.result().userRatio();
+        long monthlyLimit = ctx.result().monthlyLimit();
+
         long totalLimit = totalUsed + remaining;
         double usedPercent = totalLimit > 0 ? (double) totalUsed / totalLimit * 100.0 : 0.0;
 
         // DB 저장 이벤트 (Persist)
         persistProducer.publish(
                 new UsagePersistPayload(
-                        eventId,
+                        ctx.eventId(),
                         familyId,
                         customerId,
                         payload.bytesUsed(),
                         payload.appId(),
                         status.startsWith("BLOCKED") ? "BLOCKED" : "ALLOWED",
                         remaining,
-                        eventTime));
+                        ctx.eventTime()));
 
         // 실시간 사용량 이벤트 (Realtime)
         realtimeProducer.publish(
@@ -140,7 +127,7 @@ public class UsageSyncService {
         } else if (status.startsWith("BLOCKED")) {
             // reason: BLOCKED_ACCESS, BLOCKED_LIMIT_MONTHLY, BLOCKED_FAMILY_QUOTA
             notificationProducer.publish(
-                    new CustomerBlockedPayload(familyId, customerId, status, eventTime));
+                    new CustomerBlockedPayload(familyId, customerId, status, ctx.eventTime()));
         }
     }
 
@@ -153,4 +140,34 @@ public class UsageSyncService {
             throw new IllegalArgumentException("Invalid warning status format: " + status, e);
         }
     }
+
+    // lua script 결과 파싱
+    private UsageUpdateResult parseScriptResult(List<Object> result, String eventId) {
+        if (result == null || result.size() < 6) {
+            log.error(
+                    "Usage update script returned invalid result. eventId={}, result={}",
+                    eventId,
+                    result);
+            throw new IllegalStateException("Invalid Lua script result");
+        }
+
+        long totalUsed = ((Number) result.get(0)).longValue();
+        long remaining = ((Number) result.get(1)).longValue();
+        String status = (String) result.get(2);
+        long monthlyUsed = ((Number) result.get(3)).longValue();
+
+        Object userRatioObj = result.get(4);
+        double userRatio =
+                (userRatioObj instanceof Number number)
+                        ? number.doubleValue()
+                        : Double.parseDouble(userRatioObj.toString());
+
+        long monthlyLimit = ((Number) result.get(5)).longValue();
+
+        return new UsageUpdateResult(
+                totalUsed, remaining, status, monthlyUsed, userRatio, monthlyLimit);
+    }
+
+    private record UsageSyncContext(
+            String eventId, String eventTime, UsagePayload payload, UsageUpdateResult result) {}
 }
