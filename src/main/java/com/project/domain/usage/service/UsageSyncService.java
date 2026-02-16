@@ -151,8 +151,8 @@ public class UsageSyncService {
         // "WARNING_10" -> 10
         try {
             return Integer.parseInt(status.split("_")[1]);
-        } catch (Exception e) {
-            return 10; // 기본값
+        } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+            throw new IllegalArgumentException("Invalid warning status format: " + status, e);
         }
     }
 }
