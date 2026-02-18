@@ -83,6 +83,22 @@ dependencies {
 }
 
 // ============================================================================
+// bootRun (.env 파일에서 환경변수 로딩)
+// ============================================================================
+bootRun {
+    def envFile = rootProject.file('.env')
+    if (envFile.exists()) {
+        envFile.readLines().each { line ->
+            line = line.trim()
+            if (line && !line.startsWith('#') && line.contains('=')) {
+                def (key, value) = line.split('=', 2)
+                environment key.trim(), value.trim()
+            }
+        }
+    }
+}
+
+// ============================================================================
 // Test
 // ============================================================================
 tasks.named('test') {

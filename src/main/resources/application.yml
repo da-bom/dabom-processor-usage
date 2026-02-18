@@ -10,9 +10,9 @@ spring:
     name: backend
 
   datasource:
-    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3310}/${MYSQL_DATABASE:app_db}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
-    username: ${MYSQL_USER:app_user}
-    password: ${MYSQL_PASSWORD:app_password}
+    url: ${DATABASE_URL:jdbc:mysql://localhost:3310/app_db?serverTimezone=Asia/Seoul&characterEncoding=UTF-8}
+    username: ${DATABASE_USER:app_user}
+    password: ${DATABASE_PASSWORD:app_password}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -30,16 +30,22 @@ spring:
       port: ${REDIS_PORT:6379}
 
   kafka:
-    bootstrap-servers: ${KAFKA_HOST:localhost}:${KAFKA_PORT:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
-      group-id: ${CONSUMER_GROUP:example-group}
-      auto-offset-reset: ${CONSUMER_AUTO_OFFSET:earliest}
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:dabom-processor-usage-dev}
+      auto-offset-reset: ${KAFKA_AUTO_OFFSET_RESET:earliest}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
+app:
+  kafka:
+    dedup:
+      policy-ttl-seconds: ${KAFKA_POLICY_DEDUP_TTL_SECONDS:3600}
+      usage-persist-ttl-seconds: ${KAFKA_USAGE_PERSIST_DEDUP_TTL_SECONDS:600}
+
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
 
 springdoc:
   api-docs:
@@ -69,6 +75,7 @@ management:
     tags:
       application: ${spring.application.name}
   tracing:
+    enabled: ${OTEL_TRACING_ENABLED:false}
     sampling:
       probability: ${OTEL_SAMPLING_PROBABILITY:1.0}
   otlp:
@@ -80,9 +87,3 @@ logging:
     root: INFO
     org.springframework.web: INFO
     org.hibernate.SQL: WARN
-
-app:
-  kafka:
-    dedup:
-      policy-ttl-seconds: ${POLICY_DEDUP_TTL_SECONDS:3600}
-      usage-persist-ttl-seconds: ${USAGE_PERSIST_DEDUP_TTL_SECONDS:600}

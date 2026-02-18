@@ -1,0 +1,99 @@
+# ============================================================================
+# Deploy to Azure Container Apps (develop)
+# ============================================================================
+# 역할:
+#   - Integrate workflow 성공 후 자동 실행
+#   - GitHub Actions에서 JAR 빌드 → ACR에 Docker 이미지 Push
+#   - Azure Container Apps에 새 이미지 배포 (SSH 없음)
+#
+# GitHub Secrets:
+#   - AZURE_CREDENTIALS       : Azure Service Principal JSON
+#
+# GitHub Variables (Settings > Variables > Actions):
+#   - ACR_NAME                : ACR 이름 (예: dabom)
+#   - CONTAINER_APP_NAME      : Container App 이름 (예: dabom-processor-usage)
+#   - RESOURCE_GROUP          : 리소스 그룹 이름 (예: dabom-rg)
+#
+# 환경변수는 Container App에 직접 설정 (Azure Portal 또는 CLI)
+# ============================================================================
+
+name: Deploy to Azure Container Apps
+
+on:
+  workflow_run:
+    workflows: ["Integrate Backend"]
+    types:
+      - completed
+    branches:
+      - develop
+  workflow_dispatch:
+
+env:
+  ACR_NAME: ${{ vars.ACR_NAME }}
+  CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
+  RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+
+    steps:
+      # ── 1. 빌드 ──
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Build JAR
+        run: |
+          chmod +x gradlew
+          ./gradlew bootJar -x checkstyleMain -x checkstyleTest -x spotlessCheck --no-daemon
+
+      # ── 2. ACR에 이미지 Push ──
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build and Push Docker Image
+        run: |
+          REGISTRY=${{ env.ACR_NAME }}.azurecr.io
+          TAG=$REGISTRY/dabom-processor-usage:${{ github.sha }}
+          LATEST=$REGISTRY/dabom-processor-usage:latest
+          docker build -f Dockerfile.deploy -t $TAG -t $LATEST .
+          docker push $TAG
+          docker push $LATEST
+
+      # ── 3. Container Apps 배포 ──
+      - name: Deploy to Container Apps
+        run: |
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.ACR_NAME }}.azurecr.io/dabom-processor-usage:${{ github.sha }}
+
+      - name: Deployment Summary
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: \`${{ env.ACR_NAME }}.azurecr.io/dabom-processor-usage:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: https://$FQDN" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
