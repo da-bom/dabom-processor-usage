@@ -53,71 +53,81 @@ public class UsagePersistService {
         String safeOriginEventId =
                 logSanitizer.sanitize(payload == null ? null : payload.originEventId());
 
-        // payload 검증
-        if (!usagePersistEventValidator.isValidPayload(payload, eventId, recordKey)) {
+        // 1) payload 검증
+        if (!isValidPayload(payload, eventId, recordKey)) {
             return;
         }
 
-        // 중복 이벤트 차단
+        // 2) 중복 이벤트 차단
         if (isDuplicated(payload.originEventId(), safeOriginEventId)) {
             return;
         }
 
-        // eventType으로 KST 월(yyyy-MM-01) 계산
+        // 3) 기준 월 계산
         LocalDate currentMonth = resolveCurrentMonth(payload.eventTime());
 
-        // DB update 먼저 수행
+        // 4) DB update 우선, 없으면 insert(+경합 시 update 재시도)
+        persistQuota(payload, currentMonth, safeEventId, safeOriginEventId);
+    }
+
+    private boolean isValidPayload(UsagePersistPayload payload, String eventId, String recordKey) {
+        return usagePersistEventValidator.isValidPayload(payload, eventId, recordKey);
+    }
+
+    private void persistQuota(
+            UsagePersistPayload payload,
+            LocalDate currentMonth,
+            String safeEventId,
+            String safeOriginEventId) {
+        // 이미 row가 있으면 원자적 증가(update)로 끝내고, 없을 때만 insert 경로로 진입
+        if (tryUpdateExistingQuota(payload, currentMonth, safeEventId, safeOriginEventId)) {
+            return;
+        }
+
+        createQuotaRow(payload, currentMonth, safeEventId, safeOriginEventId);
+    }
+
+    private boolean tryUpdateExistingQuota(
+            UsagePersistPayload payload,
+            LocalDate currentMonth,
+            String safeEventId,
+            String safeOriginEventId) {
+        // 월별 quota row가 존재하는 일반 케이스: update 1회로 처리
         int updatedRows =
                 customerQuotaRepository.incrementMonthlyUsedBytes(
                         payload.familyId(),
                         payload.customerId(),
                         currentMonth,
                         payload.bytesUsed());
-        if (updatedRows > 0) {
-            log.info(
-                    "Persisted usage to existing quota row. eventId={}, originEventId={},"
-                            + USAGE_PERSIST_LOG_SUFFIX,
-                    safeEventId,
-                    safeOriginEventId,
-                    payload.familyId(),
-                    payload.customerId(),
-                    payload.bytesUsed(),
-                    currentMonth);
-            return;
+        if (updatedRows <= 0) {
+            return false;
         }
 
-        // update 0건이면 insert
+        log.info(
+                "Persisted usage to existing quota row. eventId={}, originEventId={},"
+                        + USAGE_PERSIST_LOG_SUFFIX,
+                safeEventId,
+                safeOriginEventId,
+                payload.familyId(),
+                payload.customerId(),
+                payload.bytesUsed(),
+                currentMonth);
+        return true;
+    }
+
+    private void createQuotaRow(
+            UsagePersistPayload payload,
+            LocalDate currentMonth,
+            String safeEventId,
+            String safeOriginEventId) {
+        // 신규 월 row 생성 시, 직전 월의 limit 값을 기본값으로 이어받는다
         long monthlyLimitBytes = resolveMonthlyLimitBytes(payload.familyId(), payload.customerId());
-        CustomerQuota customerQuota =
-                CustomerQuota.builder()
-                        .familyId(payload.familyId())
-                        .customerId(payload.customerId())
-                        .monthlyUsedBytes(payload.bytesUsed())
-                        .currentMonth(currentMonth)
-                        .monthlyLimitBytes(monthlyLimitBytes)
-                        .isBlocked(false)
-                        .blockReason(null)
-                        .build();
+        CustomerQuota customerQuota = buildCustomerQuota(payload, currentMonth, monthlyLimitBytes);
         try {
             customerQuotaRepository.saveAndFlush(customerQuota);
         } catch (DataIntegrityViolationException e) {
-            // insert 경합시 실패한 쪽 이벤트 update 재시도
-            int retriedRows =
-                    customerQuotaRepository.incrementMonthlyUsedBytes(
-                            payload.familyId(),
-                            payload.customerId(),
-                            currentMonth,
-                            payload.bytesUsed());
-            if (retriedRows > 0) {
-                log.info(
-                        "Recovered from concurrent insert race. eventId={}, originEventId={},"
-                                + USAGE_PERSIST_LOG_SUFFIX,
-                        safeEventId,
-                        safeOriginEventId,
-                        payload.familyId(),
-                        payload.customerId(),
-                        payload.bytesUsed(),
-                        currentMonth);
+            // insert 경합 시 update 재시도
+            if (retryUpdateAfterInsertRace(payload, currentMonth, safeEventId, safeOriginEventId)) {
                 return;
             }
             throw e;
@@ -134,9 +144,51 @@ public class UsagePersistService {
                 currentMonth);
     }
 
+    private boolean retryUpdateAfterInsertRace(
+            UsagePersistPayload payload,
+            LocalDate currentMonth,
+            String safeEventId,
+            String safeOriginEventId) {
+        // 동시성으로 다른 트랜잭션이 먼저 insert한 경우를 update 재시도로 복구
+        int retriedRows =
+                customerQuotaRepository.incrementMonthlyUsedBytes(
+                        payload.familyId(),
+                        payload.customerId(),
+                        currentMonth,
+                        payload.bytesUsed());
+        if (retriedRows <= 0) {
+            return false;
+        }
+
+        log.info(
+                "Recovered from concurrent insert race. eventId={}, originEventId={},"
+                        + USAGE_PERSIST_LOG_SUFFIX,
+                safeEventId,
+                safeOriginEventId,
+                payload.familyId(),
+                payload.customerId(),
+                payload.bytesUsed(),
+                currentMonth);
+        return true;
+    }
+
+    private CustomerQuota buildCustomerQuota(
+            UsagePersistPayload payload, LocalDate currentMonth, long monthlyLimitBytes) {
+        return CustomerQuota.builder()
+                .familyId(payload.familyId())
+                .customerId(payload.customerId())
+                .monthlyUsedBytes(payload.bytesUsed())
+                .currentMonth(currentMonth)
+                .monthlyLimitBytes(monthlyLimitBytes)
+                .isBlocked(false)
+                .blockReason(null)
+                .build();
+    }
+
     private boolean isDuplicated(String originEventId, String safeOriginEventId) {
         String dedupKey = redisKeyGenerator.generateUsagePersistEventDedupKey(originEventId);
         try {
+            // Redis setIfAbsent + TTL로 짧은 윈도우 중복 이벤트를 제거한다
             Boolean firstSeen =
                     familyStringRedisTemplate
                             .opsForValue()
@@ -151,6 +203,7 @@ public class UsagePersistService {
             }
             return false;
         } catch (DataAccessException e) {
+            // 가용성 우선: Redis 장애 시에도 DB 적재는 계속 진행한다
             log.warn(
                     "Redis dedup failed. Continue DB persist for availability. originEventId={}",
                     safeOriginEventId,
@@ -160,6 +213,7 @@ public class UsagePersistService {
     }
 
     private LocalDate resolveCurrentMonth(String eventTime) {
+        // 기본값은 현재 KST 월의 1일(yyyy-MM-01)
         LocalDate currentMonth = LocalDate.now(KST).withDayOfMonth(1);
         if (eventTime == null || eventTime.isBlank()) {
             return currentMonth;
@@ -193,6 +247,7 @@ public class UsagePersistService {
     }
 
     private boolean isOutsideAllowedMonthWindow(LocalDate parsedMonth, LocalDate currentMonth) {
+        // 과거 1개월까지만 허용하고 미래 월은 허용하지 않는다
         LocalDate minMonth = currentMonth.minusMonths(ALLOWED_PAST_MONTHS);
         LocalDate maxMonth = currentMonth.plusMonths(ALLOWED_FUTURE_MONTHS);
         return parsedMonth.isBefore(minMonth) || parsedMonth.isAfter(maxMonth);
