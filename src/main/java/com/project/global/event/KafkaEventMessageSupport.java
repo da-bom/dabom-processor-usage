@@ -10,6 +10,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.global.event.dto.EventEnvelope;
+import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,9 +20,9 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class KafkaEventMessageSupport {
     private static final String EVENT_TYPE_FIELD = "eventType";
-    private static final int MAX_LOG_VALUE_LENGTH = 128;
 
     private final ObjectMapper objectMapper;
+    private final LogSanitizer logSanitizer;
 
     public JsonNode readTree(String rawMessage) throws JsonProcessingException {
         return objectMapper.readTree(rawMessage);
@@ -75,13 +76,6 @@ public class KafkaEventMessageSupport {
     }
 
     public String sanitizeForLog(String raw) {
-        if (raw == null) {
-            return "null";
-        }
-        String sanitized = raw.replace('\r', '_').replace('\n', '_').replace('\t', '_');
-        if (sanitized.length() > MAX_LOG_VALUE_LENGTH) {
-            return sanitized.substring(0, MAX_LOG_VALUE_LENGTH) + "...";
-        }
-        return sanitized;
+        return logSanitizer.sanitize(raw);
     }
 }

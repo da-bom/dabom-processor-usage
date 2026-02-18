@@ -5,7 +5,6 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
-import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
@@ -18,6 +17,7 @@ import com.project.domain.customer.entity.CustomerQuota;
 import com.project.domain.customer.repository.CustomerQuotaRepository;
 import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.usage.UsagePersistPayload;
+import com.project.global.util.LogSanitizer;
 import com.project.global.util.RedisKeyGenerator;
 
 import lombok.RequiredArgsConstructor;
@@ -30,8 +30,6 @@ public class UsagePersistService {
     private static final String ASIA_SEOUL_TIME_ZONE = "Asia/Seoul";
     private static final String DEDUP_FLAG = "1";
     private static final ZoneId KST = ZoneId.of(ASIA_SEOUL_TIME_ZONE);
-    private static final Pattern LOG_DANGEROUS_PATTERN = Pattern.compile("[\\r\\n\\t]");
-    private static final int MAX_LOG_VALUE_LENGTH = 128;
     private static final String USAGE_PERSIST_LOG_SUFFIX =
             " familyId={}, customerId={}, bytesUsed={}, currentMonth={}";
     private static final long ALLOWED_PAST_MONTHS = 1;
@@ -40,6 +38,7 @@ public class UsagePersistService {
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;
     private final RedisKeyGenerator redisKeyGenerator;
+    private final LogSanitizer logSanitizer;
     private final UsagePersistEventValidator usagePersistEventValidator;
     private final CustomerQuotaRepository customerQuotaRepository;
 
@@ -50,8 +49,9 @@ public class UsagePersistService {
     public void persist(EventEnvelope<UsagePersistPayload> envelope, String recordKey) {
         UsagePersistPayload payload = envelope.payload();
         String eventId = envelope.eventId();
-        String safeEventId = sanitizeForLog(eventId);
-        String safeOriginEventId = sanitizeForLog(payload == null ? null : payload.originEventId());
+        String safeEventId = logSanitizer.sanitize(eventId);
+        String safeOriginEventId =
+                logSanitizer.sanitize(payload == null ? null : payload.originEventId());
 
         // payload 검증
         if (!usagePersistEventValidator.isValidPayload(payload, eventId, recordKey)) {
@@ -176,7 +176,7 @@ public class UsagePersistService {
                         "Suspicious eventTime month. Fallback to current month. eventTime={},"
                                 + " parsedMonth={}, currentMonth={}, allowedPastMonths={},"
                                 + " allowedFutureMonths={}",
-                        sanitizeForLog(eventTime),
+                        logSanitizer.sanitize(eventTime),
                         parsedMonth,
                         currentMonth,
                         ALLOWED_PAST_MONTHS,
@@ -187,7 +187,7 @@ public class UsagePersistService {
         } catch (DateTimeParseException e) {
             log.warn(
                     "Invalid eventTime format. Fallback to current month. eventTime={}",
-                    sanitizeForLog(eventTime));
+                    logSanitizer.sanitize(eventTime));
             return currentMonth;
         }
     }
@@ -196,17 +196,6 @@ public class UsagePersistService {
         LocalDate minMonth = currentMonth.minusMonths(ALLOWED_PAST_MONTHS);
         LocalDate maxMonth = currentMonth.plusMonths(ALLOWED_FUTURE_MONTHS);
         return parsedMonth.isBefore(minMonth) || parsedMonth.isAfter(maxMonth);
-    }
-
-    private String sanitizeForLog(String raw) {
-        if (raw == null) {
-            return "null";
-        }
-        String sanitized = LOG_DANGEROUS_PATTERN.matcher(raw).replaceAll("_");
-        if (sanitized.length() > MAX_LOG_VALUE_LENGTH) {
-            return sanitized.substring(0, MAX_LOG_VALUE_LENGTH) + "...";
-        }
-        return sanitized;
     }
 
     private long resolveMonthlyLimitBytes(Long familyId, Long customerId) {

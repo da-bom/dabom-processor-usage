@@ -14,6 +14,7 @@ import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.policy.PolicyUpdatedPayload;
 import com.project.global.exception.ApplicationException;
 import com.project.global.exception.code.PolicyErrorCode;
+import com.project.global.util.LogSanitizer;
 import com.project.global.util.RedisKeyGenerator;
 
 import lombok.RequiredArgsConstructor;
@@ -24,13 +25,13 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class PolicyConstraintSyncService {
     private static final String VALUE_LOG_SUFFIX = ", value={}";
-    private static final int MAX_LOG_VALUE_LENGTH = 128;
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;
     private final RedisScript<List<String>> policyConstraintUpdateScript;
     private final RedisKeyGenerator redisKeyGenerator;
     private final FamilyMemberRepository familyMemberRepository;
     private final PolicyEventValidator policyEventValidator;
+    private final LogSanitizer logSanitizer;
 
     @Value("${app.kafka.dedup.policy-ttl-seconds}")
     private long dedupTtlSeconds;
@@ -164,21 +165,21 @@ public class PolicyConstraintSyncService {
                     "Failed to sync policy constraint to Redis. eventId={}, familyId={},"
                             + " customerId={}, field={}"
                             + VALUE_LOG_SUFFIX,
-                    sanitizeForLog(eventId),
+                    logSanitizer.sanitize(eventId),
                     familyId,
                     customerId,
-                    sanitizeForLog(policyKey),
-                    sanitizeForLog(newValue),
+                    logSanitizer.sanitize(policyKey),
+                    logSanitizer.sanitize(newValue),
                     e);
             throw new ApplicationException(PolicyErrorCode.POLICY_REDIS_SYNC_FAILED);
         }
         if (result == null || result.isEmpty()) {
             log.error(
                     "Invalid Redis Lua result. eventId={}, familyId={}, customerId={}, field={}",
-                    sanitizeForLog(eventId),
+                    logSanitizer.sanitize(eventId),
                     familyId,
                     customerId,
-                    sanitizeForLog(policyKey));
+                    logSanitizer.sanitize(policyKey));
             throw new ApplicationException(PolicyErrorCode.POLICY_REDIS_INVALID_RESULT);
         }
 
@@ -219,16 +220,5 @@ public class PolicyConstraintSyncService {
                 customerId,
                 policyKey,
                 result);
-    }
-
-    private String sanitizeForLog(String raw) {
-        if (raw == null) {
-            return "null";
-        }
-        String sanitized = raw.replace('\r', '_').replace('\n', '_').replace('\t', '_');
-        if (sanitized.length() > MAX_LOG_VALUE_LENGTH) {
-            return sanitized.substring(0, MAX_LOG_VALUE_LENGTH) + "...";
-        }
-        return sanitized;
     }
 }
