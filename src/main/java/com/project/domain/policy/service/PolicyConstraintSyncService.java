@@ -48,6 +48,7 @@ public class PolicyConstraintSyncService {
         String policyKey = payload.policyKey();
         String newValue = payload.newValue();
         Long targetCustomerId = payload.targetCustomerId();
+        // timestamp를 버전으로 사용해 역순 이벤트에서도 최신값만 반영
         long eventVersion = resolveEventVersion(envelope);
 
         // 삭제/갱신 모두 policyKey whitelist 검증
@@ -110,6 +111,7 @@ public class PolicyConstraintSyncService {
                 familyMemberRepository.findAllByFamilyIdAndDeletedAtIsNull(payload.familyId());
         int appliedCount = 0;
         int skippedCount = 0;
+        // family 구성원 단위로 동일 정책을 순차 반영
         for (FamilyMember customer : customers) {
             String result =
                     applyConstraintToCustomer(
@@ -145,9 +147,11 @@ public class PolicyConstraintSyncService {
             Long customerId,
             String policyKey,
             String newValue) {
+        // dedupKey: 동일 이벤트 재처리 방지, constraintsKey: 실제 제약값 저장 키
         String dedupKey = redisKeyGenerator.generatePolicyEventDedupKey(eventId, customerId);
         String constraintsKey =
                 redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId);
+        // 삭제 이벤트는 빈 문자열로 정규화해 Lua 스크립트에서 일관되게 처리
         String normalizedNewValue = (newValue == null || newValue.isBlank()) ? "" : newValue;
 
         List<String> result;
@@ -161,6 +165,7 @@ public class PolicyConstraintSyncService {
                             normalizedNewValue,
                             String.valueOf(eventVersion));
         } catch (Exception e) {
+            // Redis/Lua 실패는 비즈니스 예외로 전환해 상위에서 실패를 인지하게 함
             log.error(
                     "Failed to sync policy constraint to Redis. eventId={}, familyId={},"
                             + " customerId={}, field={}"
@@ -173,6 +178,7 @@ public class PolicyConstraintSyncService {
                     e);
             throw new ApplicationException(PolicyErrorCode.POLICY_REDIS_SYNC_FAILED);
         }
+        // Lua 결과가 비정상이면 무시하지 않고 예외 처리
         if (result == null || result.isEmpty()) {
             log.error(
                     "Invalid Redis Lua result. eventId={}, familyId={}, customerId={}, field={}",
@@ -187,6 +193,7 @@ public class PolicyConstraintSyncService {
     }
 
     private long resolveEventVersion(EventEnvelope<PolicyUpdatedPayload> envelope) {
+        // timestamp가 없으면 현재 시각을 버전으로 대체
         if (envelope.timestamp() == null) {
             return System.currentTimeMillis();
         }
@@ -200,6 +207,7 @@ public class PolicyConstraintSyncService {
             String policyKey,
             String newValue,
             String result) {
+        // APPLIED 외 값(중복/버전역전 등)은 skip 사유로 기록해 추적 가능하게 함
         if ("APPLIED".equals(result)) {
             log.info(
                     "Updated customer constraint. eventId={}, familyId={}, customerId={}, field={}"
