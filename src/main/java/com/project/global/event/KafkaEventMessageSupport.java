@@ -50,10 +50,10 @@ public class KafkaEventMessageSupport {
                 log.warn(
                         "Skip unexpected event. topic={}, recordKey={}, expectedEventType={},"
                                 + " actualEventType={}",
-                        sanitizeForLog(consumerRecord.topic()),
-                        sanitizeForLog(consumerRecord.key()),
-                        sanitizeForLog(expectedEventType),
-                        sanitizeForLog(actualEventType));
+                        logSanitizer.sanitize(consumerRecord.topic()),
+                        logSanitizer.sanitize(consumerRecord.key()),
+                        logSanitizer.sanitize(expectedEventType),
+                        logSanitizer.sanitize(actualEventType));
                 return;
             }
 
@@ -62,20 +62,16 @@ public class KafkaEventMessageSupport {
         } catch (JsonProcessingException e) {
             log.error(
                     "Failed to parse Kafka payload. topic={}, recordKey={}",
-                    sanitizeForLog(consumerRecord.topic()),
-                    sanitizeForLog(consumerRecord.key()),
+                    logSanitizer.sanitize(consumerRecord.topic()),
+                    logSanitizer.sanitize(consumerRecord.key()),
                     e);
         } catch (Exception e) {
             log.error(
                     "Failed to handle Kafka event. topic={}, recordKey={}, expectedEventType={}",
-                    sanitizeForLog(consumerRecord.topic()),
-                    sanitizeForLog(consumerRecord.key()),
-                    sanitizeForLog(expectedEventType),
+                    logSanitizer.sanitize(consumerRecord.topic()),
+                    logSanitizer.sanitize(consumerRecord.key()),
+                    logSanitizer.sanitize(expectedEventType),
                     e);
         }
-    }
-
-    public String sanitizeForLog(String raw) {
-        return logSanitizer.sanitize(raw);
     }
 }

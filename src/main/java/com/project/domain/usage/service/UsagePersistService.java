@@ -49,17 +49,20 @@ public class UsagePersistService {
     public void persist(EventEnvelope<UsagePersistPayload> envelope, String recordKey) {
         UsagePersistPayload payload = envelope.payload();
         String eventId = envelope.eventId();
-        String safeEventId = logSanitizer.sanitize(eventId);
-        String safeOriginEventId =
-                logSanitizer.sanitize(payload == null ? null : payload.originEventId());
 
         // 1) payload 검증
         if (!isValidPayload(payload, eventId, recordKey)) {
             return;
         }
 
+        if (payload == null) {
+            return;
+        }
+
+        String originEventId = payload.originEventId();
+
         // 2) 중복 이벤트 차단
-        if (isDuplicated(payload.originEventId(), safeOriginEventId)) {
+        if (isDuplicated(originEventId)) {
             return;
         }
 
@@ -67,7 +70,7 @@ public class UsagePersistService {
         LocalDate currentMonth = resolveCurrentMonth(payload.eventTime());
 
         // 4) DB update 우선, 없으면 insert(+경합 시 update 재시도)
-        persistQuota(payload, currentMonth, safeEventId, safeOriginEventId);
+        persistQuota(payload, currentMonth, eventId, originEventId);
     }
 
     private boolean isValidPayload(UsagePersistPayload payload, String eventId, String recordKey) {
@@ -77,21 +80,21 @@ public class UsagePersistService {
     private void persistQuota(
             UsagePersistPayload payload,
             LocalDate currentMonth,
-            String safeEventId,
-            String safeOriginEventId) {
+            String eventId,
+            String originEventId) {
         // 이미 row가 있으면 원자적 증가(update)로 끝내고, 없을 때만 insert 경로로 진입
-        if (tryUpdateExistingQuota(payload, currentMonth, safeEventId, safeOriginEventId)) {
+        if (tryUpdateExistingQuota(payload, currentMonth, eventId, originEventId)) {
             return;
         }
 
-        createQuotaRow(payload, currentMonth, safeEventId, safeOriginEventId);
+        createQuotaRow(payload, currentMonth, eventId, originEventId);
     }
 
     private boolean tryUpdateExistingQuota(
             UsagePersistPayload payload,
             LocalDate currentMonth,
-            String safeEventId,
-            String safeOriginEventId) {
+            String eventId,
+            String originEventId) {
         // 월별 quota row가 존재하는 일반 케이스: update 1회로 처리
         int updatedRows =
                 customerQuotaRepository.incrementMonthlyUsedBytes(
@@ -106,8 +109,8 @@ public class UsagePersistService {
         log.info(
                 "Persisted usage to existing quota row. eventId={}, originEventId={},"
                         + USAGE_PERSIST_LOG_SUFFIX,
-                safeEventId,
-                safeOriginEventId,
+                logSanitizer.sanitize(eventId),
+                logSanitizer.sanitize(originEventId),
                 payload.familyId(),
                 payload.customerId(),
                 payload.bytesUsed(),
@@ -118,8 +121,8 @@ public class UsagePersistService {
     private void createQuotaRow(
             UsagePersistPayload payload,
             LocalDate currentMonth,
-            String safeEventId,
-            String safeOriginEventId) {
+            String eventId,
+            String originEventId) {
         // 신규 월 row 생성 시, 직전 월의 limit 값을 기본값으로 이어받는다
         long monthlyLimitBytes = resolveMonthlyLimitBytes(payload.familyId(), payload.customerId());
         CustomerQuota customerQuota = buildCustomerQuota(payload, currentMonth, monthlyLimitBytes);
@@ -127,7 +130,7 @@ public class UsagePersistService {
             customerQuotaRepository.saveAndFlush(customerQuota);
         } catch (DataIntegrityViolationException e) {
             // insert 경합 시 update 재시도
-            if (retryUpdateAfterInsertRace(payload, currentMonth, safeEventId, safeOriginEventId)) {
+            if (retryUpdateAfterInsertRace(payload, currentMonth, eventId, originEventId)) {
                 return;
             }
             throw e;
@@ -136,8 +139,8 @@ public class UsagePersistService {
         log.info(
                 "Persisted usage by creating quota row. eventId={}, originEventId={},"
                         + USAGE_PERSIST_LOG_SUFFIX,
-                safeEventId,
-                safeOriginEventId,
+                logSanitizer.sanitize(eventId),
+                logSanitizer.sanitize(originEventId),
                 payload.familyId(),
                 payload.customerId(),
                 payload.bytesUsed(),
@@ -147,8 +150,8 @@ public class UsagePersistService {
     private boolean retryUpdateAfterInsertRace(
             UsagePersistPayload payload,
             LocalDate currentMonth,
-            String safeEventId,
-            String safeOriginEventId) {
+            String eventId,
+            String originEventId) {
         // 동시성으로 다른 트랜잭션이 먼저 insert한 경우를 update 재시도로 복구
         int retriedRows =
                 customerQuotaRepository.incrementMonthlyUsedBytes(
@@ -163,8 +166,8 @@ public class UsagePersistService {
         log.info(
                 "Recovered from concurrent insert race. eventId={}, originEventId={},"
                         + USAGE_PERSIST_LOG_SUFFIX,
-                safeEventId,
-                safeOriginEventId,
+                logSanitizer.sanitize(eventId),
+                logSanitizer.sanitize(originEventId),
                 payload.familyId(),
                 payload.customerId(),
                 payload.bytesUsed(),
@@ -185,7 +188,7 @@ public class UsagePersistService {
                 .build();
     }
 
-    private boolean isDuplicated(String originEventId, String safeOriginEventId) {
+    private boolean isDuplicated(String originEventId) {
         String dedupKey = redisKeyGenerator.generateUsagePersistEventDedupKey(originEventId);
         try {
             // Redis setIfAbsent + TTL로 짧은 윈도우 중복 이벤트를 제거한다
@@ -198,7 +201,8 @@ public class UsagePersistService {
                                     Duration.ofSeconds(usagePersistDedupTtlSeconds));
             if (!Boolean.TRUE.equals(firstSeen)) {
                 log.info(
-                        "Skip duplicated usage-persist event. originEventId={}", safeOriginEventId);
+                        "Skip duplicated usage-persist event. originEventId={}",
+                        logSanitizer.sanitize(originEventId));
                 return true;
             }
             return false;
@@ -206,7 +210,7 @@ public class UsagePersistService {
             // 가용성 우선: Redis 장애 시에도 DB 적재는 계속 진행한다
             log.warn(
                     "Redis dedup failed. Continue DB persist for availability. originEventId={}",
-                    safeOriginEventId,
+                    logSanitizer.sanitize(originEventId),
                     e);
             return false;
         }
