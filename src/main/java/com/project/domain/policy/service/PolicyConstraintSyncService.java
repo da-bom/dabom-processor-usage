@@ -31,11 +31,15 @@ public class PolicyConstraintSyncService {
     private final RedisKeyGenerator redisKeyGenerator;
     private final FamilyMemberRepository familyMemberRepository;
     private final PolicyEventValidator policyEventValidator;
+    private final PolicyAssignmentSyncService policyAssignmentSyncService;
+    private final PolicyConstraintWarmupService policyConstraintWarmupService;
     private final LogSanitizer logSanitizer;
 
     @Value("${app.kafka.dedup.policy-ttl-seconds}")
     private long dedupTtlSeconds;
 
+    // policy-updated 이벤트의 진입점:
+    // 1) payload 검증 -> 2) DB(assignment) 반영 -> 3) Redis warmup -> 4) Lua 적용
     public void sync(EventEnvelope<PolicyUpdatedPayload> envelope, String recordKey) {
         PolicyUpdatedPayload payload = envelope.payload();
         String eventId = envelope.eventId();
@@ -45,6 +49,7 @@ public class PolicyConstraintSyncService {
             return;
         }
 
+        // 이벤트 payload에서 정책 키/값/대상을 추출한다.
         String policyKey = payload.policyKey();
         String newValue = payload.newValue();
         Long targetCustomerId = payload.targetCustomerId();
@@ -94,6 +99,13 @@ public class PolicyConstraintSyncService {
                 return;
             }
 
+            // DB를 source of truth로 유지하기 위해 assignment.rules를 먼저 동기화한다.
+            policyAssignmentSyncService.syncAssignment(
+                    payload.familyId(), targetCustomerId, policyKey, newValue);
+            // Redis constraints 키가 없으면 DB 기반으로 초기 워밍업한다.
+            policyConstraintWarmupService.warmupIfMissing(payload.familyId(), targetCustomerId);
+
+            // 마지막으로 Lua 원자 연산으로 고객 제약값을 반영한다.
             String result =
                     applyConstraintToCustomer(
                             eventId,
@@ -107,12 +119,20 @@ public class PolicyConstraintSyncService {
         }
 
         // targetCustomerId가 없으면 family 전체(active customer)에게 반영
+        // family-wide assignment를 DB에 먼저 반영한다.
+        policyAssignmentSyncService.syncAssignment(payload.familyId(), null, policyKey, newValue);
+
         List<FamilyMember> customers =
                 familyMemberRepository.findAllByFamilyIdAndDeletedAtIsNull(payload.familyId());
         int appliedCount = 0;
         int skippedCount = 0;
         // family 구성원 단위로 동일 정책을 순차 반영
         for (FamilyMember customer : customers) {
+            // 각 customer별 constraints 키 부재 시 DB 값을 기반으로 복구한다.
+            policyConstraintWarmupService.warmupIfMissing(
+                    payload.familyId(), customer.getCustomerId());
+
+            // 워밍업 이후 Lua를 실행해 이벤트 dedup/stale 검사를 함께 처리한다.
             String result =
                     applyConstraintToCustomer(
                             eventId,
@@ -156,6 +176,7 @@ public class PolicyConstraintSyncService {
 
         List<String> result;
         try {
+            // Lua 스크립트가 dedup + stale + HSET/HDEL을 원자적으로 수행한다.
             result =
                     familyStringRedisTemplate.execute(
                             policyConstraintUpdateScript,
@@ -197,6 +218,7 @@ public class PolicyConstraintSyncService {
         if (envelope.timestamp() == null) {
             return System.currentTimeMillis();
         }
+        // OffsetDateTime -> epoch millis로 변환해 Lua 버전 비교에 사용한다.
         return envelope.timestamp().toInstant(ZoneOffset.UTC).toEpochMilli();
     }
 
