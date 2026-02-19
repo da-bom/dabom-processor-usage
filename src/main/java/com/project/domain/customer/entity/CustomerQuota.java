@@ -23,7 +23,7 @@ import lombok.NoArgsConstructor;
         uniqueConstraints = {
             @UniqueConstraint(
                     name = "uk_customer_quota_family_customer_month",
-                    columnNames = {"family_id", "customer_id", "current_month"})
+                    columnNames = {"family_id", "customer_id", "current_month", "deleted_at"})
         })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
