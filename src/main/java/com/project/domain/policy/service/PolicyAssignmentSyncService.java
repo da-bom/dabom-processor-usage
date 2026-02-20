@@ -198,9 +198,7 @@ public class PolicyAssignmentSyncService {
             case TIME_BLOCK -> applyTimeBlockConstraint(rules, constraints, assignmentVersion);
             case MANUAL_BLOCK -> applyManualBlockConstraint(rules, constraints, assignmentVersion);
             case APP_BLOCK -> applyAppBlockConstraint(rules, constraints, assignmentVersion);
-            default -> {
-                // 정책 타입은 resolvePolicyType/DB 템플릿으로 제한되므로 무시
-            }
+            default -> log.warn("Unsupported policy type for ERD rules conversion. policyType={}", policyType);
         }
     }
 
@@ -496,7 +494,7 @@ public class PolicyAssignmentSyncService {
         }
         String normalized = hhmm.trim();
         if (normalized.length() != 4) {
-            return normalized;
+            return null;
         }
         return normalized.substring(0, 2) + ":" + normalized.substring(2, 4);
     }
