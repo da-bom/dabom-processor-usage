@@ -3,7 +3,10 @@ package com.project.domain.policy.repository;
 import java.util.List;
 import java.util.Optional;
 
+import jakarta.persistence.LockModeType;
+
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -28,6 +31,19 @@ public interface PolicyAssignmentRepository extends JpaRepository<PolicyAssignme
             @Param("targetCustomerId") Long targetCustomerId,
             @Param("type") PolicyType type);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query(
+            "SELECT pa FROM PolicyAssignment pa "
+                    + "JOIN Policy p ON pa.policyId = p.id "
+                    + "WHERE pa.familyId = :familyId "
+                    + "AND pa.targetCustomerId = :targetCustomerId "
+                    + "AND p.policyType = :type "
+                    + "AND pa.deletedAt IS NULL")
+    Optional<PolicyAssignment> findByTargetAndTypeForUpdate(
+            @Param("familyId") Long familyId,
+            @Param("targetCustomerId") Long targetCustomerId,
+            @Param("type") PolicyType type);
+
     @Query(
             "SELECT pa FROM PolicyAssignment pa "
                     + "JOIN Policy p ON pa.policyId = p.id "
@@ -38,6 +54,17 @@ public interface PolicyAssignmentRepository extends JpaRepository<PolicyAssignme
     Optional<PolicyAssignment> findFamilyPolicyByType(
             @Param("familyId") Long familyId, @Param("type") PolicyType type);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query(
+            "SELECT pa FROM PolicyAssignment pa "
+                    + "JOIN Policy p ON pa.policyId = p.id "
+                    + "WHERE pa.familyId = :familyId "
+                    + "AND pa.targetCustomerId IS NULL "
+                    + "AND p.policyType = :type "
+                    + "AND pa.deletedAt IS NULL")
+    Optional<PolicyAssignment> findFamilyPolicyByTypeForUpdate(
+            @Param("familyId") Long familyId, @Param("type") PolicyType type);
+
     @Query(
             "SELECT pa FROM PolicyAssignment pa "
                     + "WHERE pa.familyId = :familyId "
@@ -45,4 +72,19 @@ public interface PolicyAssignmentRepository extends JpaRepository<PolicyAssignme
                     + "AND pa.deletedAt IS NULL")
     List<PolicyAssignment> findEffectiveAssignments(
             @Param("familyId") Long familyId, @Param("customerId") Long customerId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query(
+            "SELECT pa FROM PolicyAssignment pa "
+                    + "WHERE pa.familyId = :familyId "
+                    + "AND (pa.targetCustomerId IS NULL OR pa.targetCustomerId = :customerId) "
+                    + "AND pa.deletedAt IS NULL")
+    List<PolicyAssignment> findEffectiveAssignmentsForUpdate(
+            @Param("familyId") Long familyId, @Param("customerId") Long customerId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query(
+            "SELECT p FROM PolicyAssignment p WHERE p.familyId = :familyId AND p.deletedAt"
+                    + " IS NULL")
+    List<PolicyAssignment> findAllByFamilyIdForUpdate(@Param("familyId") Long familyId);
 }
