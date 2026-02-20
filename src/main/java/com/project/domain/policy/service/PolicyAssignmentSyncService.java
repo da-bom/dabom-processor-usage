@@ -195,6 +195,7 @@ public class PolicyAssignmentSyncService {
         }
 
         Map<String, Object> rules = parseRulesToMap(assignment.getRules());
+        long assignmentVersion = resolveAssignmentVersion(assignment);
         rules.forEach(
                 (key, value) -> {
                     // 문서에 정의된 정책 키만 constraints로 반영한다.
@@ -205,6 +206,8 @@ public class PolicyAssignmentSyncService {
                     String stringValue = String.valueOf(value).trim();
                     if (!stringValue.isEmpty()) {
                         constraints.put(key, stringValue);
+                        // warmup 시에도 Lua stale 가드가 동작하도록 버전 필드를 함께 채운다.
+                        constraints.put(buildVersionField(key), String.valueOf(assignmentVersion));
                     }
                 });
     }
@@ -291,5 +294,27 @@ public class PolicyAssignmentSyncService {
 
     private String buildCacheKey(Long familyId, Long customerId) {
         return familyId + ":" + customerId;
+    }
+
+    private String buildVersionField(String policyKey) {
+        return "ver:" + policyKey;
+    }
+
+    private long resolveAssignmentVersion(PolicyAssignment assignment) {
+        if (assignment.getUpdatedAt() != null) {
+            return assignment
+                    .getUpdatedAt()
+                    .atZone(java.time.ZoneOffset.UTC)
+                    .toInstant()
+                    .toEpochMilli();
+        }
+        if (assignment.getCreatedAt() != null) {
+            return assignment
+                    .getCreatedAt()
+                    .atZone(java.time.ZoneOffset.UTC)
+                    .toInstant()
+                    .toEpochMilli();
+        }
+        return System.currentTimeMillis();
     }
 }
