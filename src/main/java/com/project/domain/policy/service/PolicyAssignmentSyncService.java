@@ -6,13 +6,16 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.project.domain.family.entity.FamilyMember;
+import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.policy.entity.Policy;
 import com.project.domain.policy.entity.PolicyAssignment;
 import com.project.domain.policy.enums.PolicyType;
@@ -43,6 +46,8 @@ public class PolicyAssignmentSyncService {
 
     private final PolicyAssignmentRepository policyAssignmentRepository;
     private final PolicyRepository policyRepository;
+    private final FamilyMemberRepository familyMemberRepository;
+    private final CacheManager cacheManager;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -66,15 +71,15 @@ public class PolicyAssignmentSyncService {
             return;
         }
 
-        // rules JSON은 Redis 정책 키 그대로 저장/갱신한다.
-        // newValue가 blank/null이면 해당 정책 키를 rules에서 제거한다.
+        // rules JSON은 Redis 정책 키 그대로 저장/갱신한다
+        // newValue가 blank/null이면 해당 정책 키를 rules에서 제거한다
         PolicyAssignment assignment = assignmentOpt.get();
         String updatedRules = mergeRules(assignment.getRules(), policyKey, newValue);
         assignment.update(updatedRules, null, null);
         policyAssignmentRepository.save(assignment);
 
-        // DB에서 계산한 constraints 캐시는 정책 변경마다 무효화
-        evictConstraintCache();
+        // 캐시는 영향받는 키만 무효화한다
+        evictConstraintCacheByScope(familyId, targetCustomerId);
     }
 
     @Cacheable(
@@ -120,9 +125,24 @@ public class PolicyAssignmentSyncService {
         return constraints;
     }
 
-    @CacheEvict(cacheNames = POLICY_CONSTRAINT_CACHE, allEntries = true)
-    public void evictConstraintCache() {
-        // annotation 기반 캐시 무효화
+    // targetCustomerId가 있으면 해당 customer 키만, 없으면 family 전체 customer 키를 무효화한다.
+    public void evictConstraintCacheByScope(Long familyId, Long targetCustomerId) {
+        if (targetCustomerId != null) {
+            evictConstraintCacheKey(familyId, targetCustomerId);
+            return;
+        }
+
+        familyMemberRepository.findAllByFamilyIdAndDeletedAtIsNull(familyId).stream()
+                .map(FamilyMember::getCustomerId)
+                .forEach(customerId -> evictConstraintCacheKey(familyId, customerId));
+    }
+
+    private void evictConstraintCacheKey(Long familyId, Long customerId) {
+        Cache cache = cacheManager.getCache(POLICY_CONSTRAINT_CACHE);
+        if (cache == null) {
+            return;
+        }
+        cache.evict(buildCacheKey(familyId, customerId));
     }
 
     private Optional<PolicyAssignment> findAssignmentByPolicyType(
@@ -267,5 +287,9 @@ public class PolicyAssignmentSyncService {
             return null;
         }
         return newValue.trim();
+    }
+
+    private String buildCacheKey(Long familyId, Long customerId) {
+        return familyId + ":" + customerId;
     }
 }
