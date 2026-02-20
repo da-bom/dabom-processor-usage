@@ -25,17 +25,22 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class PolicyConstraintSyncService {
     private static final String VALUE_LOG_SUFFIX = ", value={}";
+    private static final String LUA_RESULT_APPLIED = "APPLIED";
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;
     private final RedisScript<List<String>> policyConstraintUpdateScript;
     private final RedisKeyGenerator redisKeyGenerator;
     private final FamilyMemberRepository familyMemberRepository;
     private final PolicyEventValidator policyEventValidator;
+    private final PolicyAssignmentSyncService policyAssignmentSyncService;
+    private final PolicyConstraintWarmupService policyConstraintWarmupService;
     private final LogSanitizer logSanitizer;
 
     @Value("${app.kafka.dedup.policy-ttl-seconds}")
     private long dedupTtlSeconds;
 
+    // policy-updated 이벤트의 진입점:
+    // 1) payload 검증 -> 2) Redis warmup -> 3) Lua 적용 -> 4) APPLIED인 경우 DB 반영
     public void sync(EventEnvelope<PolicyUpdatedPayload> envelope, String recordKey) {
         PolicyUpdatedPayload payload = envelope.payload();
         String eventId = envelope.eventId();
@@ -45,6 +50,7 @@ public class PolicyConstraintSyncService {
             return;
         }
 
+        // 이벤트 payload에서 정책 키/값/대상을 추출한다.
         String policyKey = payload.policyKey();
         String newValue = payload.newValue();
         Long targetCustomerId = payload.targetCustomerId();
@@ -55,10 +61,10 @@ public class PolicyConstraintSyncService {
         if (!policyEventValidator.isAllowedPolicyKey(policyKey)) {
             log.warn(
                     "Invalid policy key. eventId={}, familyId={}, customerId={}, field={}",
-                    eventId,
+                    logSanitizer.sanitize(eventId),
                     payload.familyId(),
                     targetCustomerId,
-                    policyKey);
+                    logSanitizer.sanitize(policyKey));
             return;
         }
 
@@ -69,11 +75,11 @@ public class PolicyConstraintSyncService {
             log.warn(
                     "Invalid policy value. eventId={}, familyId={}, customerId={}, field={}"
                             + VALUE_LOG_SUFFIX,
-                    eventId,
+                    logSanitizer.sanitize(eventId),
                     payload.familyId(),
                     targetCustomerId,
-                    policyKey,
-                    newValue);
+                    logSanitizer.sanitize(policyKey),
+                    logSanitizer.sanitize(newValue));
             return;
         }
 
@@ -87,13 +93,17 @@ public class PolicyConstraintSyncService {
                 log.warn(
                         "Skip policy update due to invalid family-customer relation."
                                 + " eventId={}, familyId={}, customerId={}, field={}",
-                        eventId,
+                        logSanitizer.sanitize(eventId),
                         payload.familyId(),
                         targetCustomerId,
-                        policyKey);
+                        logSanitizer.sanitize(policyKey));
                 return;
             }
 
+            // Redis constraints 키가 없으면 DB 기반으로 초기 워밍업한다.
+            policyConstraintWarmupService.warmupIfMissing(payload.familyId(), targetCustomerId);
+
+            // Lua 원자 연산으로 고객 제약값을 반영한다.
             String result =
                     applyConstraintToCustomer(
                             eventId,
@@ -102,6 +112,12 @@ public class PolicyConstraintSyncService {
                             targetCustomerId,
                             policyKey,
                             newValue);
+
+            // Lua 결과가 APPLIED인 경우에만 DB를 동기화해 stale/duplicate로 인한 DB 오염을 막는다.
+            if (LUA_RESULT_APPLIED.equals(result)) {
+                policyAssignmentSyncService.syncAssignment(
+                        payload.familyId(), targetCustomerId, policyKey, newValue);
+            }
             logResult(eventId, payload.familyId(), targetCustomerId, policyKey, newValue, result);
             return;
         }
@@ -111,8 +127,14 @@ public class PolicyConstraintSyncService {
                 familyMemberRepository.findAllByFamilyIdAndDeletedAtIsNull(payload.familyId());
         int appliedCount = 0;
         int skippedCount = 0;
+        boolean anyApplied = false;
         // family 구성원 단위로 동일 정책을 순차 반영
         for (FamilyMember customer : customers) {
+            // 각 customer별 constraints 키 부재 시 DB 값을 기반으로 복구한다.
+            policyConstraintWarmupService.warmupIfMissing(
+                    payload.familyId(), customer.getCustomerId());
+
+            // 워밍업 이후 Lua를 실행해 이벤트 dedup/stale 검사를 함께 처리한다.
             String result =
                     applyConstraintToCustomer(
                             eventId,
@@ -121,23 +143,30 @@ public class PolicyConstraintSyncService {
                             customer.getCustomerId(),
                             policyKey,
                             newValue);
-            if ("APPLIED".equals(result)) {
+            if (LUA_RESULT_APPLIED.equals(result)) {
                 appliedCount++;
+                anyApplied = true;
             } else {
                 skippedCount++;
             }
+        }
+
+        // family-wide 이벤트는 개별 customer Lua 결과 중 하나라도 APPLIED면 DB를 1회 동기화한다.
+        if (anyApplied) {
+            policyAssignmentSyncService.syncAssignment(
+                    payload.familyId(), null, policyKey, newValue);
         }
 
         log.info(
                 "Processed family-wide constraint. eventId={}, familyId={}, appliedCount={},"
                         + " skippedCount={}, field={}"
                         + VALUE_LOG_SUFFIX,
-                eventId,
+                logSanitizer.sanitize(eventId),
                 payload.familyId(),
                 appliedCount,
                 skippedCount,
-                policyKey,
-                newValue);
+                logSanitizer.sanitize(policyKey),
+                logSanitizer.sanitize(newValue));
     }
 
     private String applyConstraintToCustomer(
@@ -156,6 +185,7 @@ public class PolicyConstraintSyncService {
 
         List<String> result;
         try {
+            // Lua 스크립트가 dedup + stale + HSET/HDEL을 원자적으로 수행한다.
             result =
                     familyStringRedisTemplate.execute(
                             policyConstraintUpdateScript,
@@ -197,6 +227,7 @@ public class PolicyConstraintSyncService {
         if (envelope.timestamp() == null) {
             return System.currentTimeMillis();
         }
+        // OffsetDateTime -> epoch millis로 변환해 Lua 버전 비교에 사용한다.
         return envelope.timestamp().toInstant(ZoneOffset.UTC).toEpochMilli();
     }
 
@@ -208,25 +239,25 @@ public class PolicyConstraintSyncService {
             String newValue,
             String result) {
         // APPLIED 외 값(중복/버전역전 등)은 skip 사유로 기록해 추적 가능하게 함
-        if ("APPLIED".equals(result)) {
+        if (LUA_RESULT_APPLIED.equals(result)) {
             log.info(
                     "Updated customer constraint. eventId={}, familyId={}, customerId={}, field={}"
                             + VALUE_LOG_SUFFIX,
-                    eventId,
+                    logSanitizer.sanitize(eventId),
                     familyId,
                     customerId,
-                    policyKey,
-                    newValue);
+                    logSanitizer.sanitize(policyKey),
+                    logSanitizer.sanitize(newValue));
             return;
         }
 
         log.info(
                 "Skipped customer constraint update. eventId={}, familyId={}, customerId={},"
                         + " field={}, reason={}",
-                eventId,
+                logSanitizer.sanitize(eventId),
                 familyId,
                 customerId,
-                policyKey,
-                result);
+                logSanitizer.sanitize(policyKey),
+                logSanitizer.sanitize(newValue));
     }
 }
