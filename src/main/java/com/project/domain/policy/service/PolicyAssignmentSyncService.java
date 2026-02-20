@@ -198,7 +198,10 @@ public class PolicyAssignmentSyncService {
             case TIME_BLOCK -> applyTimeBlockConstraint(rules, constraints, assignmentVersion);
             case MANUAL_BLOCK -> applyManualBlockConstraint(rules, constraints, assignmentVersion);
             case APP_BLOCK -> applyAppBlockConstraint(rules, constraints, assignmentVersion);
-            default -> log.warn("Unsupported policy type for ERD rules conversion. policyType={}", policyType);
+            default ->
+                    log.warn(
+                            "Unsupported policy type for ERD rules conversion. policyType={}",
+                            policyType);
         }
     }
 
