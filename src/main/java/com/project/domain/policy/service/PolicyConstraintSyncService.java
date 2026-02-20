@@ -39,7 +39,7 @@ public class PolicyConstraintSyncService {
     private long dedupTtlSeconds;
 
     // policy-updated 이벤트의 진입점:
-    // 1) payload 검증 -> 2) DB(assignment) 반영 -> 3) Redis warmup -> 4) Lua 적용
+    // 1) payload 검증 -> 2) Redis warmup -> 3) Lua 적용 -> 4) APPLIED인 경우 DB 반영
     public void sync(EventEnvelope<PolicyUpdatedPayload> envelope, String recordKey) {
         PolicyUpdatedPayload payload = envelope.payload();
         String eventId = envelope.eventId();
@@ -99,13 +99,10 @@ public class PolicyConstraintSyncService {
                 return;
             }
 
-            // DB를 source of truth로 유지하기 위해 assignment.rules를 먼저 동기화한다.
-            policyAssignmentSyncService.syncAssignment(
-                    payload.familyId(), targetCustomerId, policyKey, newValue);
             // Redis constraints 키가 없으면 DB 기반으로 초기 워밍업한다.
             policyConstraintWarmupService.warmupIfMissing(payload.familyId(), targetCustomerId);
 
-            // 마지막으로 Lua 원자 연산으로 고객 제약값을 반영한다.
+            // Lua 원자 연산으로 고객 제약값을 반영한다.
             String result =
                     applyConstraintToCustomer(
                             eventId,
@@ -114,18 +111,22 @@ public class PolicyConstraintSyncService {
                             targetCustomerId,
                             policyKey,
                             newValue);
+
+            // Lua 결과가 APPLIED인 경우에만 DB를 동기화해 stale/duplicate로 인한 DB 오염을 막는다.
+            if ("APPLIED".equals(result)) {
+                policyAssignmentSyncService.syncAssignment(
+                        payload.familyId(), targetCustomerId, policyKey, newValue);
+            }
             logResult(eventId, payload.familyId(), targetCustomerId, policyKey, newValue, result);
             return;
         }
 
         // targetCustomerId가 없으면 family 전체(active customer)에게 반영
-        // family-wide assignment를 DB에 먼저 반영한다.
-        policyAssignmentSyncService.syncAssignment(payload.familyId(), null, policyKey, newValue);
-
         List<FamilyMember> customers =
                 familyMemberRepository.findAllByFamilyIdAndDeletedAtIsNull(payload.familyId());
         int appliedCount = 0;
         int skippedCount = 0;
+        boolean anyApplied = false;
         // family 구성원 단위로 동일 정책을 순차 반영
         for (FamilyMember customer : customers) {
             // 각 customer별 constraints 키 부재 시 DB 값을 기반으로 복구한다.
@@ -143,9 +144,16 @@ public class PolicyConstraintSyncService {
                             newValue);
             if ("APPLIED".equals(result)) {
                 appliedCount++;
+                anyApplied = true;
             } else {
                 skippedCount++;
             }
+        }
+
+        // family-wide 이벤트는 개별 customer Lua 결과 중 하나라도 APPLIED면 DB를 1회 동기화한다.
+        if (anyApplied) {
+            policyAssignmentSyncService.syncAssignment(
+                    payload.familyId(), null, policyKey, newValue);
         }
 
         log.info(
