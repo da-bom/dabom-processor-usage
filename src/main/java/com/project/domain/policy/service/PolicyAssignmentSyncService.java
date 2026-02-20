@@ -218,7 +218,6 @@ public class PolicyAssignmentSyncService {
             }
             return;
         }
-
     }
 
     private String mergeRulesByPolicyType(
