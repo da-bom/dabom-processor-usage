@@ -25,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class PolicyConstraintSyncService {
     private static final String VALUE_LOG_SUFFIX = ", value={}";
+    private static final String LUA_RESULT_APPLIED = "APPLIED";
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;
     private final RedisScript<List<String>> policyConstraintUpdateScript;
@@ -113,7 +114,7 @@ public class PolicyConstraintSyncService {
                             newValue);
 
             // Lua 결과가 APPLIED인 경우에만 DB를 동기화해 stale/duplicate로 인한 DB 오염을 막는다.
-            if ("APPLIED".equals(result)) {
+            if (LUA_RESULT_APPLIED.equals(result)) {
                 policyAssignmentSyncService.syncAssignment(
                         payload.familyId(), targetCustomerId, policyKey, newValue);
             }
@@ -142,7 +143,7 @@ public class PolicyConstraintSyncService {
                             customer.getCustomerId(),
                             policyKey,
                             newValue);
-            if ("APPLIED".equals(result)) {
+            if (LUA_RESULT_APPLIED.equals(result)) {
                 appliedCount++;
                 anyApplied = true;
             } else {
@@ -238,7 +239,7 @@ public class PolicyConstraintSyncService {
             String newValue,
             String result) {
         // APPLIED 외 값(중복/버전역전 등)은 skip 사유로 기록해 추적 가능하게 함
-        if ("APPLIED".equals(result)) {
+        if (LUA_RESULT_APPLIED.equals(result)) {
             log.info(
                     "Updated customer constraint. eventId={}, familyId={}, customerId={}, field={}"
                             + VALUE_LOG_SUFFIX,
