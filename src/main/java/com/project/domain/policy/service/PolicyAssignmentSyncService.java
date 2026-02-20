@@ -193,7 +193,8 @@ public class PolicyAssignmentSyncService {
             long assignmentVersion) {
         // policy type마다 rules JSON 스키마가 다르므로 전용 변환기로 분기
         switch (policyType) {
-            case MONTHLY_LIMIT -> applyMonthlyLimitConstraint(rules, constraints, assignmentVersion);
+            case MONTHLY_LIMIT ->
+                    applyMonthlyLimitConstraint(rules, constraints, assignmentVersion);
             case TIME_BLOCK -> applyTimeBlockConstraint(rules, constraints, assignmentVersion);
             case MANUAL_BLOCK -> applyManualBlockConstraint(rules, constraints, assignmentVersion);
             case APP_BLOCK -> applyAppBlockConstraint(rules, constraints, assignmentVersion);
@@ -212,7 +213,10 @@ public class PolicyAssignmentSyncService {
             return;
         }
         putConstraintWithVersion(
-                constraints, POLICY_KEY_LIMIT_MONTHLY, String.valueOf(limitBytes), assignmentVersion);
+                constraints,
+                POLICY_KEY_LIMIT_MONTHLY,
+                String.valueOf(limitBytes),
+                assignmentVersion);
     }
 
     // 시간대 차단 정책의 rules를 시작/종료 제약으로 변환
@@ -223,10 +227,12 @@ public class PolicyAssignmentSyncService {
         String end = toHhmm(rules.get(RULE_KEY_END));
 
         if (start != null) {
-            putConstraintWithVersion(constraints, POLICY_KEY_BLOCK_TIME_START, start, assignmentVersion);
+            putConstraintWithVersion(
+                    constraints, POLICY_KEY_BLOCK_TIME_START, start, assignmentVersion);
         }
         if (end != null) {
-            putConstraintWithVersion(constraints, POLICY_KEY_BLOCK_TIME_END, end, assignmentVersion);
+            putConstraintWithVersion(
+                    constraints, POLICY_KEY_BLOCK_TIME_END, end, assignmentVersion);
         }
     }
 
