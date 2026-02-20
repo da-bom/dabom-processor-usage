@@ -6,16 +6,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import org.springframework.cache.Cache;
-import org.springframework.cache.CacheManager;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.project.domain.family.entity.FamilyMember;
-import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.policy.entity.Policy;
 import com.project.domain.policy.entity.PolicyAssignment;
 import com.project.domain.policy.enums.PolicyType;
@@ -29,8 +24,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class PolicyAssignmentSyncService {
-    public static final String POLICY_CONSTRAINT_CACHE = "policyConstraintCache";
-
     // 정확 매칭 키:
     // prefix가 없는 정책 키는 이 맵에 등록해서 policy type을 연결한다.
     private static final Map<String, PolicyType> EXACT_POLICY_KEY_TYPES =
@@ -46,8 +39,6 @@ public class PolicyAssignmentSyncService {
 
     private final PolicyAssignmentRepository policyAssignmentRepository;
     private final PolicyRepository policyRepository;
-    private final FamilyMemberRepository familyMemberRepository;
-    private final CacheManager cacheManager;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -77,15 +68,8 @@ public class PolicyAssignmentSyncService {
         String updatedRules = mergeRules(assignment.getRules(), policyKey, newValue);
         assignment.update(updatedRules, null, null);
         policyAssignmentRepository.save(assignment);
-
-        // 캐시는 영향받는 키만 무효화한다
-        evictConstraintCacheByScope(familyId, targetCustomerId);
     }
 
-    @Cacheable(
-            cacheNames = POLICY_CONSTRAINT_CACHE,
-            key = "#familyId + ':' + #customerId",
-            sync = true)
     @Transactional(readOnly = true)
     public Map<String, String> loadEffectiveConstraints(Long familyId, Long customerId) {
         // customer에 적용 가능한 assignment는 family-wide + customer-specific 두 종류다.
@@ -125,26 +109,6 @@ public class PolicyAssignmentSyncService {
         return constraints;
     }
 
-    // targetCustomerId가 있으면 해당 customer 키만, 없으면 family 전체 customer 키를 무효화한다.
-    public void evictConstraintCacheByScope(Long familyId, Long targetCustomerId) {
-        if (targetCustomerId != null) {
-            evictConstraintCacheKey(familyId, targetCustomerId);
-            return;
-        }
-
-        familyMemberRepository.findAllByFamilyIdAndDeletedAtIsNull(familyId).stream()
-                .map(FamilyMember::getCustomerId)
-                .forEach(customerId -> evictConstraintCacheKey(familyId, customerId));
-    }
-
-    private void evictConstraintCacheKey(Long familyId, Long customerId) {
-        Cache cache = cacheManager.getCache(POLICY_CONSTRAINT_CACHE);
-        if (cache == null) {
-            return;
-        }
-        cache.evict(buildCacheKey(familyId, customerId));
-    }
-
     private Optional<PolicyAssignment> findAssignmentByPolicyType(
             Long familyId, Long targetCustomerId, String policyKey) {
         // policyKey -> policyType 변환에 실패하면 type 기반 조회를 건너뛴다
@@ -155,10 +119,10 @@ public class PolicyAssignmentSyncService {
 
         // targetCustomerId가 null이면 가족 전체 정책 조회
         if (targetCustomerId == null) {
-            return policyAssignmentRepository.findFamilyPolicyByType(familyId, policyType);
+            return policyAssignmentRepository.findFamilyPolicyByTypeForUpdate(familyId, policyType);
         }
 
-        return policyAssignmentRepository.findByTargetAndType(
+        return policyAssignmentRepository.findByTargetAndTypeForUpdate(
                 familyId, targetCustomerId, policyType);
     }
 
@@ -167,10 +131,10 @@ public class PolicyAssignmentSyncService {
         // type 기반 조회 실패 시, rules 내부에 실제 키가 들어있는 assignment를 fallback으로 찾는다
         List<PolicyAssignment> candidates =
                 targetCustomerId == null
-                        ? policyAssignmentRepository.findAllByFamilyId(familyId).stream()
+                        ? policyAssignmentRepository.findAllByFamilyIdForUpdate(familyId).stream()
                                 .filter(assignment -> assignment.getTargetCustomerId() == null)
                                 .toList()
-                        : policyAssignmentRepository.findEffectiveAssignments(
+                        : policyAssignmentRepository.findEffectiveAssignmentsForUpdate(
                                 familyId, targetCustomerId);
 
         return candidates.stream()
@@ -290,10 +254,6 @@ public class PolicyAssignmentSyncService {
             return null;
         }
         return newValue.trim();
-    }
-
-    private String buildCacheKey(Long familyId, Long customerId) {
-        return familyId + ":" + customerId;
     }
 
     private String buildVersionField(String policyKey) {

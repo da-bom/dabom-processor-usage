@@ -60,10 +60,10 @@ public class PolicyConstraintSyncService {
         if (!policyEventValidator.isAllowedPolicyKey(policyKey)) {
             log.warn(
                     "Invalid policy key. eventId={}, familyId={}, customerId={}, field={}",
-                    eventId,
+                    logSanitizer.sanitize(eventId),
                     payload.familyId(),
                     targetCustomerId,
-                    policyKey);
+                    logSanitizer.sanitize(policyKey));
             return;
         }
 
@@ -74,11 +74,11 @@ public class PolicyConstraintSyncService {
             log.warn(
                     "Invalid policy value. eventId={}, familyId={}, customerId={}, field={}"
                             + VALUE_LOG_SUFFIX,
-                    eventId,
+                    logSanitizer.sanitize(eventId),
                     payload.familyId(),
                     targetCustomerId,
-                    policyKey,
-                    newValue);
+                    logSanitizer.sanitize(policyKey),
+                    logSanitizer.sanitize(newValue));
             return;
         }
 
@@ -92,10 +92,10 @@ public class PolicyConstraintSyncService {
                 log.warn(
                         "Skip policy update due to invalid family-customer relation."
                                 + " eventId={}, familyId={}, customerId={}, field={}",
-                        eventId,
+                        logSanitizer.sanitize(eventId),
                         payload.familyId(),
                         targetCustomerId,
-                        policyKey);
+                        logSanitizer.sanitize(policyKey));
                 return;
             }
 
@@ -160,12 +160,12 @@ public class PolicyConstraintSyncService {
                 "Processed family-wide constraint. eventId={}, familyId={}, appliedCount={},"
                         + " skippedCount={}, field={}"
                         + VALUE_LOG_SUFFIX,
-                eventId,
+                logSanitizer.sanitize(eventId),
                 payload.familyId(),
                 appliedCount,
                 skippedCount,
-                policyKey,
-                newValue);
+                logSanitizer.sanitize(policyKey),
+                logSanitizer.sanitize(newValue));
     }
 
     private String applyConstraintToCustomer(
@@ -242,21 +242,21 @@ public class PolicyConstraintSyncService {
             log.info(
                     "Updated customer constraint. eventId={}, familyId={}, customerId={}, field={}"
                             + VALUE_LOG_SUFFIX,
-                    eventId,
+                    logSanitizer.sanitize(eventId),
                     familyId,
                     customerId,
-                    policyKey,
-                    newValue);
+                    logSanitizer.sanitize(policyKey),
+                    logSanitizer.sanitize(newValue));
             return;
         }
 
         log.info(
                 "Skipped customer constraint update. eventId={}, familyId={}, customerId={},"
                         + " field={}, reason={}",
-                eventId,
+                logSanitizer.sanitize(eventId),
                 familyId,
                 customerId,
-                policyKey,
-                result);
+                logSanitizer.sanitize(policyKey),
+                logSanitizer.sanitize(newValue));
     }
 }
