@@ -44,20 +44,28 @@ public class PolicyAssignmentSyncService {
     @Transactional
     public void syncAssignment(
             Long familyId, Long targetCustomerId, String policyKey, String newValue) {
-        // 1) policyType 매핑 기반으로 우선 탐색
-        Optional<PolicyAssignment> assignmentOpt =
-                findAssignmentByPolicyType(familyId, targetCustomerId, policyKey);
-
-        // 2) 못 찾으면 rules 내부에 해당 키가 있는 assignment를 fallback 탐색
-        if (assignmentOpt.isEmpty()) {
-            assignmentOpt = findAssignmentByConstraintKey(familyId, targetCustomerId, policyKey);
-        }
-
-        if (assignmentOpt.isEmpty()) {
-            log.warn(
-                    "Policy assignment not found. familyId={}, customerId={}, policyKey={}",
+        // policyKey -> policyType 매핑이 실패하면 데이터 계약 불일치로 보고 에러 로그 후 종료
+        PolicyType policyType = resolvePolicyType(policyKey).orElse(null);
+        if (policyType == null) {
+            log.error(
+                    "Unsupported policy key. Skip assignment sync. familyId={}, customerId={},"
+                            + " policyKey={}",
                     familyId,
                     targetCustomerId,
+                    policyKey);
+            return;
+        }
+
+        Optional<PolicyAssignment> assignmentOpt =
+                findAssignmentByPolicyType(familyId, targetCustomerId, policyType);
+
+        if (assignmentOpt.isEmpty()) {
+            log.error(
+                    "Policy assignment not found. Skip assignment sync. familyId={}, customerId={},"
+                            + " policyType={}, policyKey={}",
+                    familyId,
+                    targetCustomerId,
+                    policyType,
                     policyKey);
             return;
         }
@@ -110,13 +118,7 @@ public class PolicyAssignmentSyncService {
     }
 
     private Optional<PolicyAssignment> findAssignmentByPolicyType(
-            Long familyId, Long targetCustomerId, String policyKey) {
-        // policyKey -> policyType 변환에 실패하면 type 기반 조회를 건너뛴다
-        PolicyType policyType = resolvePolicyType(policyKey).orElse(null);
-        if (policyType == null) {
-            return Optional.empty();
-        }
-
+            Long familyId, Long targetCustomerId, PolicyType policyType) {
         // targetCustomerId가 null이면 가족 전체 정책 조회
         if (targetCustomerId == null) {
             return policyAssignmentRepository.findFamilyPolicyByTypeForUpdate(familyId, policyType);
@@ -124,23 +126,6 @@ public class PolicyAssignmentSyncService {
 
         return policyAssignmentRepository.findByTargetAndTypeForUpdate(
                 familyId, targetCustomerId, policyType);
-    }
-
-    private Optional<PolicyAssignment> findAssignmentByConstraintKey(
-            Long familyId, Long targetCustomerId, String policyKey) {
-        // type 기반 조회 실패 시, rules 내부에 실제 키가 들어있는 assignment를 fallback으로 찾는다
-        List<PolicyAssignment> candidates =
-                targetCustomerId == null
-                        ? policyAssignmentRepository.findAllByFamilyIdForUpdate(familyId).stream()
-                                .filter(assignment -> assignment.getTargetCustomerId() == null)
-                                .toList()
-                        : policyAssignmentRepository.findEffectiveAssignmentsForUpdate(
-                                familyId, targetCustomerId);
-
-        return candidates.stream()
-                .filter(PolicyAssignment::isActive)
-                .filter(assignment -> containsPolicyKey(assignment.getRules(), policyKey))
-                .findFirst();
     }
 
     private void applyAssignmentConstraints(
@@ -206,10 +191,6 @@ public class PolicyAssignmentSyncService {
             log.warn("Failed to parse rules JSON. Fallback to empty rules. rules={}", rulesJson, e);
             return new LinkedHashMap<>();
         }
-    }
-
-    private boolean containsPolicyKey(String rulesJson, String policyKey) {
-        return parseRulesToMap(rulesJson).containsKey(policyKey);
     }
 
     private Optional<PolicyType> resolvePolicyType(String policyKey) {
