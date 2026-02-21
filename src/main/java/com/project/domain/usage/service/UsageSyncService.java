@@ -71,9 +71,9 @@ public class UsageSyncService {
                 usageRedisWarmupService.ensureCustomerUsageCached(familyId, customerId, monthlyKey);
         policyConstraintWarmupService.warmupIfMissing(familyId, customerId);
 
-        if (!(familyInfoRedisWarmup
-                && familyRemainingRedisWarmup
-                && customerMonthlyUsageRedisWarmup)) {
+        if (!familyInfoRedisWarmup
+                || !familyRemainingRedisWarmup
+                || !customerMonthlyUsageRedisWarmup) {
             log.error("Redis Warmup is Failed. eventId={}", eventId);
             return;
         }
