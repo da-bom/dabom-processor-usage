@@ -52,124 +52,120 @@ class UsageSyncServiceTest {
     @Mock private RedisScript<List<Object>> usageUpdateScript;
 
     @Test
-    @DisplayName("정상 상태일 때는 Persist와 Realtime 이벤트만 발행되어야 한다")
+    @DisplayName("정상 상태에서는 Persist와 Realtime 이벤트만 발행된다")
     void syncUsage_Normal() {
-        // given
         String eventId = "evt_1";
         String eventTime = LocalDateTime.now().toString();
         UsagePayload payload = new UsagePayload(eventId, 100L, 1L, "appId", 1024L, Map.of());
 
-        // Key Mocking
-        given(redisKeyGenerator.generateFamilyInfoKey(100L)).willReturn("family:100:info");
-        given(redisKeyGenerator.generateFamilyRemainingKey(100L))
-                .willReturn("family:100:remaining");
-        given(redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(100L, 1L))
-                .willReturn("monthlyKey");
-        given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L))
-                .willReturn("constraintsKey");
-        given(redisKeyGenerator.generateFamilyAlertsKey(100L)).willReturn("alertsKey");
-        given(usageRedisWarmupService.ensureFamilyInfoCached(100L, "family:100:info"))
-                .willReturn(true);
-        given(usageRedisWarmupService.ensureRemainingBytesCached(100L, "family:100:remaining"))
-                .willReturn(true);
-        given(usageRedisWarmupService.ensureCustomerUsageCached(100L, 1L, "monthlyKey"))
-                .willReturn(true);
+        stubCommon(100L, 1L);
 
-        // Mock Lua Result: [totalUsed, remaining, status, monthlyUsed, userRatio, monthlyLimit]
         List<Object> scriptResult = List.of(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L);
-
-        // RedisTemplate execute mocking
-        // 주의: varargs 매칭 등 까다로운 부분은 any() 사용 권장
-        given(redisTemplate.execute(eq(usageUpdateScript), anyList(), any(Object.class)))
+        given(
+                        redisTemplate.execute(
+                                eq(usageUpdateScript),
+                                anyList(),
+                                any(Object.class),
+                                any(Object.class)))
                 .willReturn(scriptResult);
 
-        // when
         usageSyncService.syncUsage(eventId, eventTime, payload);
 
-        // then
-        // 1. Persist 발행 확인
         verify(persistProducer, times(1)).publish(any(UsagePersistPayload.class));
-
-        // 2. Realtime 발행 확인
         verify(realtimeProducer, times(1)).publish(any(UsageRealtimePayload.class));
-
-        // 3. Notification 발행 안 함 확인
         verify(notificationProducer, never()).publish(any(ThresholdAlertPayload.class));
         verify(notificationProducer, never()).publish(any(CustomerBlockedPayload.class));
     }
 
     @Test
-    @DisplayName("WARNING 상태일 때는 ThresholdAlertPayload가 발행되어야 한다")
+    @DisplayName("WARNING 상태에서는 ThresholdAlertPayload가 발행된다")
     void syncUsage_Warning() {
-        // given
         String eventId = "evt_2";
         String eventTime = LocalDateTime.now().toString();
         UsagePayload payload = new UsagePayload(eventId, 100L, 1L, "appId", 1024L, Map.of());
 
-        given(redisKeyGenerator.generateFamilyInfoKey(100L)).willReturn("family:100:info");
-        given(redisKeyGenerator.generateFamilyRemainingKey(100L))
-                .willReturn("family:100:remaining");
-        given(redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(100L, 1L))
-                .willReturn("monthlyKey");
-        given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L))
-                .willReturn("constraintsKey");
-        given(redisKeyGenerator.generateFamilyAlertsKey(100L)).willReturn("alertsKey");
-        given(usageRedisWarmupService.ensureFamilyInfoCached(100L, "family:100:info"))
-                .willReturn(true);
-        given(usageRedisWarmupService.ensureRemainingBytesCached(100L, "family:100:remaining"))
-                .willReturn(true);
-        given(usageRedisWarmupService.ensureCustomerUsageCached(100L, 1L, "monthlyKey"))
-                .willReturn(true);
+        stubCommon(100L, 1L);
 
-        // Status: WARNING_10 (10% 남음)
-        // [totalUsed, remaining, status, monthlyUsed, userRatio, monthlyLimit]
         List<Object> scriptResult = List.of(9000L, 1000L, "WARNING_10", 2000L, 0.2, 10000L);
-
-        given(redisTemplate.execute(eq(usageUpdateScript), anyList(), any(Object.class)))
+        given(
+                        redisTemplate.execute(
+                                eq(usageUpdateScript),
+                                anyList(),
+                                any(Object.class),
+                                any(Object.class)))
                 .willReturn(scriptResult);
 
-        // when
         usageSyncService.syncUsage(eventId, eventTime, payload);
 
-        // then
         verify(notificationProducer, times(1)).publish(any(ThresholdAlertPayload.class));
     }
 
     @Test
-    @DisplayName("BLOCKED 상태일 때는 CustomerBlockedPayload가 발행되어야 한다")
+    @DisplayName("BLOCKED 상태에서는 CustomerBlockedPayload가 발행된다")
     void syncUsage_Blocked() {
-        // given
         String eventId = "evt_3";
         String eventTime = LocalDateTime.now().toString();
         UsagePayload payload = new UsagePayload(eventId, 100L, 1L, "appId", 1024L, Map.of());
 
-        given(redisKeyGenerator.generateFamilyInfoKey(100L)).willReturn("family:100:info");
-        given(redisKeyGenerator.generateFamilyRemainingKey(100L))
-                .willReturn("family:100:remaining");
-        given(redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(100L, 1L))
-                .willReturn("monthlyKey");
-        given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L))
-                .willReturn("constraintsKey");
-        given(redisKeyGenerator.generateFamilyAlertsKey(100L)).willReturn("alertsKey");
-        given(usageRedisWarmupService.ensureFamilyInfoCached(100L, "family:100:info"))
-                .willReturn(true);
-        given(usageRedisWarmupService.ensureRemainingBytesCached(100L, "family:100:remaining"))
-                .willReturn(true);
-        given(usageRedisWarmupService.ensureCustomerUsageCached(100L, 1L, "monthlyKey"))
-                .willReturn(true);
+        stubCommon(100L, 1L);
 
-        // Status: BLOCKED_LIMIT_MONTHLY
-        // [totalUsed, remaining, status, monthlyUsed, userRatio, monthlyLimit]
         List<Object> scriptResult =
                 List.of(8000L, 2000L, "BLOCKED_LIMIT_MONTHLY", 10001L, 1.0, 10000L);
-
-        given(redisTemplate.execute(eq(usageUpdateScript), anyList(), any(Object.class)))
+        given(
+                        redisTemplate.execute(
+                                eq(usageUpdateScript),
+                                anyList(),
+                                any(Object.class),
+                                any(Object.class)))
                 .willReturn(scriptResult);
 
-        // when
         usageSyncService.syncUsage(eventId, eventTime, payload);
 
-        // then
         verify(notificationProducer, times(1)).publish(any(CustomerBlockedPayload.class));
+    }
+
+    @Test
+    @DisplayName("시간 차단(BLOCKED_TIME) 상태에서는 CustomerBlockedPayload가 발행된다")
+    void syncUsage_BlockedTime() {
+        String eventId = "evt_4";
+        String eventTime = "2026-02-20T23:30:00";
+        UsagePayload payload = new UsagePayload(eventId, 100L, 1L, "appId", 1024L, Map.of());
+
+        stubCommon(100L, 1L);
+
+        List<Object> scriptResult = List.of(8000L, 2000L, "BLOCKED_TIME", 1000L, 0.1, 10000L);
+        given(
+                        redisTemplate.execute(
+                                eq(usageUpdateScript),
+                                anyList(),
+                                any(Object.class),
+                                any(Object.class)))
+                .willReturn(scriptResult);
+
+        usageSyncService.syncUsage(eventId, eventTime, payload);
+
+        verify(notificationProducer, times(1)).publish(any(CustomerBlockedPayload.class));
+    }
+
+    private void stubCommon(long familyId, long customerId) {
+        given(redisKeyGenerator.generateFamilyInfoKey(familyId))
+                .willReturn("family:" + familyId + ":info");
+        given(redisKeyGenerator.generateFamilyRemainingKey(familyId))
+                .willReturn("family:" + familyId + ":remaining");
+        given(redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(familyId, customerId))
+                .willReturn("monthlyKey");
+        given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId))
+                .willReturn("constraintsKey");
+        given(redisKeyGenerator.generateFamilyAlertsKey(familyId)).willReturn("alertsKey");
+        given(
+                        usageRedisWarmupService.ensureFamilyInfoCached(
+                                familyId, "family:" + familyId + ":info"))
+                .willReturn(true);
+        given(
+                        usageRedisWarmupService.ensureRemainingBytesCached(
+                                familyId, "family:" + familyId + ":remaining"))
+                .willReturn(true);
+        given(usageRedisWarmupService.ensureCustomerUsageCached(familyId, customerId, "monthlyKey"))
+                .willReturn(true);
     }
 }
