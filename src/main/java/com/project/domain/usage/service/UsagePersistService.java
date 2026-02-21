@@ -2,6 +2,7 @@ package com.project.domain.usage.service;
 
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
@@ -15,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.project.domain.customer.entity.CustomerQuota;
 import com.project.domain.customer.repository.CustomerQuotaRepository;
+import com.project.domain.usage.entity.UsageRecord;
+import com.project.domain.usage.repository.UsageRecordRepository;
 import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.usage.UsagePersistPayload;
 import com.project.global.util.LogSanitizer;
@@ -41,6 +44,7 @@ public class UsagePersistService {
     private final LogSanitizer logSanitizer;
     private final UsagePersistEventValidator usagePersistEventValidator;
     private final CustomerQuotaRepository customerQuotaRepository;
+    private final UsageRecordRepository usageRecordRepository;
 
     @Value("${app.kafka.dedup.usage-persist-ttl-seconds}")
     private long usagePersistDedupTtlSeconds;
@@ -69,7 +73,12 @@ public class UsagePersistService {
         // 3) 기준 월 계산
         LocalDate currentMonth = resolveCurrentMonth(payload.eventTime());
 
-        // 4) DB update 우선, 없으면 insert(+경합 시 update 재시도)
+        // 4) usage_record 저장(event_id 유니크로 멱등 보장)
+        if (!persistUsageRecord(payload, eventId, originEventId)) {
+            return;
+        }
+
+        // 5) DB update 우선, 없으면 insert(+경합 시 update 재시도)
         persistQuota(payload, currentMonth, eventId, originEventId);
     }
 
@@ -255,6 +264,44 @@ public class UsagePersistService {
         LocalDate minMonth = currentMonth.minusMonths(ALLOWED_PAST_MONTHS);
         LocalDate maxMonth = currentMonth.plusMonths(ALLOWED_FUTURE_MONTHS);
         return parsedMonth.isBefore(minMonth) || parsedMonth.isAfter(maxMonth);
+    }
+
+    private boolean persistUsageRecord(
+            UsagePersistPayload payload, String eventId, String originEventId) {
+        UsageRecord usageRecord =
+                UsageRecord.builder()
+                        .eventId(originEventId)
+                        .familyId(payload.familyId())
+                        .customerId(payload.customerId())
+                        .bytesUsed(payload.bytesUsed())
+                        .appId(payload.appId())
+                        .eventTime(resolveEventTime(payload.eventTime()))
+                        .build();
+        try {
+            usageRecordRepository.saveAndFlush(usageRecord);
+            return true;
+        } catch (DataIntegrityViolationException e) {
+            log.info(
+                    "Skip duplicated usage_record insert by unique event_id. eventId={},"
+                            + " originEventId={}",
+                    logSanitizer.sanitize(eventId),
+                    logSanitizer.sanitize(originEventId));
+            return false;
+        }
+    }
+
+    private LocalDateTime resolveEventTime(String eventTime) {
+        if (eventTime == null || eventTime.isBlank()) {
+            return LocalDateTime.now(KST);
+        }
+        try {
+            return OffsetDateTime.parse(eventTime).atZoneSameInstant(KST).toLocalDateTime();
+        } catch (DateTimeParseException e) {
+            log.warn(
+                    "Invalid eventTime format. Fallback to now(KST). eventTime={}",
+                    logSanitizer.sanitize(eventTime));
+            return LocalDateTime.now(KST);
+        }
     }
 
     private long resolveMonthlyLimitBytes(Long familyId, Long customerId) {
