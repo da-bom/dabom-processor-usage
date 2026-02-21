@@ -108,7 +108,8 @@ public class UsageRedisWarmupService {
     public boolean ensureCustomerUsageCached(long familyId, long customerId, String key) {
         try {
             // Redis에 이미 존재하면 성공
-            if (stringRedisTemplate.hasKey(key)) {
+            Boolean exists = stringRedisTemplate.hasKey(key);
+            if (Boolean.TRUE.equals(exists)) {
                 return true;
             }
 
