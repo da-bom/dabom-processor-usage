@@ -258,6 +258,6 @@ public class PolicyConstraintSyncService {
                 familyId,
                 customerId,
                 logSanitizer.sanitize(policyKey),
-                logSanitizer.sanitize(newValue));
+                logSanitizer.sanitize(result));
     }
 }
