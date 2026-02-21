@@ -22,6 +22,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
 import com.project.domain.notification.infra.messaging.NotificationKafkaProducer;
+import com.project.domain.policy.service.PolicyConstraintWarmupService;
 import com.project.domain.usage.infra.messaging.UsagePersistKafkaProducer;
 import com.project.domain.usage.infra.messaging.UsageRealtimeKafkaProducer;
 import com.project.global.event.dto.notification.CustomerBlockedPayload;
@@ -39,6 +40,8 @@ class UsageSyncServiceTest {
     @Mock private StringRedisTemplate redisTemplate;
 
     @Mock private RedisKeyGenerator redisKeyGenerator;
+    @Mock private UsageRedisWarmupService usageRedisWarmupService;
+    @Mock private PolicyConstraintWarmupService policyConstraintWarmupService;
 
     @Mock private UsagePersistKafkaProducer persistProducer;
 
@@ -65,6 +68,12 @@ class UsageSyncServiceTest {
         given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L))
                 .willReturn("constraintsKey");
         given(redisKeyGenerator.generateFamilyAlertsKey(100L)).willReturn("alertsKey");
+        given(usageRedisWarmupService.ensureFamilyInfoCached(100L, "family:100:info"))
+                .willReturn(true);
+        given(usageRedisWarmupService.ensureRemainingBytesCached(100L, "family:100:remaining"))
+                .willReturn(true);
+        given(usageRedisWarmupService.ensureCustomerUsageCached(100L, 1L, "monthlyKey"))
+                .willReturn(true);
 
         // Mock Lua Result: [totalUsed, remaining, status, monthlyUsed, userRatio, monthlyLimit]
         List<Object> scriptResult = List.of(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L);
@@ -105,6 +114,12 @@ class UsageSyncServiceTest {
         given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L))
                 .willReturn("constraintsKey");
         given(redisKeyGenerator.generateFamilyAlertsKey(100L)).willReturn("alertsKey");
+        given(usageRedisWarmupService.ensureFamilyInfoCached(100L, "family:100:info"))
+                .willReturn(true);
+        given(usageRedisWarmupService.ensureRemainingBytesCached(100L, "family:100:remaining"))
+                .willReturn(true);
+        given(usageRedisWarmupService.ensureCustomerUsageCached(100L, 1L, "monthlyKey"))
+                .willReturn(true);
 
         // Status: WARNING_10 (10% 남음)
         // [totalUsed, remaining, status, monthlyUsed, userRatio, monthlyLimit]
@@ -136,6 +151,12 @@ class UsageSyncServiceTest {
         given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L))
                 .willReturn("constraintsKey");
         given(redisKeyGenerator.generateFamilyAlertsKey(100L)).willReturn("alertsKey");
+        given(usageRedisWarmupService.ensureFamilyInfoCached(100L, "family:100:info"))
+                .willReturn(true);
+        given(usageRedisWarmupService.ensureRemainingBytesCached(100L, "family:100:remaining"))
+                .willReturn(true);
+        given(usageRedisWarmupService.ensureCustomerUsageCached(100L, 1L, "monthlyKey"))
+                .willReturn(true);
 
         // Status: BLOCKED_LIMIT_MONTHLY
         // [totalUsed, remaining, status, monthlyUsed, userRatio, monthlyLimit]
