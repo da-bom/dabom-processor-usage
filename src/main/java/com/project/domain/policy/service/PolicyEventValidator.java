@@ -22,7 +22,6 @@ public class PolicyEventValidator {
 
     private static final Map<String, Predicate<String>> EXACT_VALUE_VALIDATORS =
             Map.of(
-                    "THROTTLE:SPEED", POSITIVE_LONG_VALIDATOR,
                     "BLOCK:ACCESS", BINARY_FLAG_VALIDATOR,
                     "BLOCK:TIME:START", HHMM_VALIDATOR,
                     "BLOCK:TIME:END", HHMM_VALIDATOR);

@@ -18,7 +18,10 @@ public interface CustomerQuotaRepository extends JpaRepository<CustomerQuota, Lo
     @Modifying
     @Query(
             "update CustomerQuota c "
-                    + "set c.monthlyUsedBytes = c.monthlyUsedBytes + :bytesUsed "
+                    + "set c.monthlyUsedBytes = c.monthlyUsedBytes + :bytesUsed, "
+                    + "c.isBlocked = :isBlocked, "
+                    + "c.blockReason = :blockReason, "
+                    + "c.updatedAt = CURRENT_TIMESTAMP "
                     + "where c.familyId = :familyId "
                     + "and c.customerId = :customerId "
                     + "and c.currentMonth = :currentMonth "
@@ -27,7 +30,26 @@ public interface CustomerQuotaRepository extends JpaRepository<CustomerQuota, Lo
             @Param("familyId") Long familyId,
             @Param("customerId") Long customerId,
             @Param("currentMonth") LocalDate currentMonth,
-            @Param("bytesUsed") Long bytesUsed);
+            @Param("bytesUsed") Long bytesUsed,
+            @Param("isBlocked") boolean isBlocked,
+            @Param("blockReason") String blockReason);
+
+    @Modifying
+    @Query(
+            "update CustomerQuota c "
+                    + "set c.isBlocked = :isBlocked, "
+                    + "c.blockReason = :blockReason, "
+                    + "c.updatedAt = CURRENT_TIMESTAMP "
+                    + "where c.familyId = :familyId "
+                    + "and c.customerId = :customerId "
+                    + "and c.currentMonth = :currentMonth "
+                    + "and c.deletedAt is null")
+    int updateBlockState(
+            @Param("familyId") Long familyId,
+            @Param("customerId") Long customerId,
+            @Param("currentMonth") LocalDate currentMonth,
+            @Param("isBlocked") boolean isBlocked,
+            @Param("blockReason") String blockReason);
 
     @Query(
             """
