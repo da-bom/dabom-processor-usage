@@ -156,9 +156,7 @@ public class PolicyAssignmentSyncService {
         Map<String, Object> rules = parseRulesToMap(assignment.getRules());
         long assignmentVersion = resolveAssignmentVersion(assignment);
 
-        // 1) 레거시 호환: rules 안에 Redis 정책 키가 직접 저장된 형태를 먼저 반영
-        applyLegacyDirectConstraintRules(rules, constraints, assignmentVersion);
-        // 2) ERD 표준: policyType + rules JSON 스키마를 Redis constraints로 변환
+        // ERD 표준: policyType + rules JSON 스키마를 Redis constraints로 변환
         applyErdRulesByPolicyType(policy.getPolicyType(), rules, constraints, assignmentVersion);
     }
 
@@ -166,23 +164,6 @@ public class PolicyAssignmentSyncService {
     private boolean isApplicableAssignment(
             PolicyAssignment assignment, Map<Long, Policy> policyById) {
         return assignment.isActive() && policyById.get(assignment.getPolicyId()) != null;
-    }
-
-    // 레거시 규격(rules에 Redis 키 직접 저장) 데이터를 constraints로 옮김
-    private void applyLegacyDirectConstraintRules(
-            Map<String, Object> rules, Map<String, String> constraints, long assignmentVersion) {
-        // 과거 데이터 호환을 위해 rules에 Redis 키가 직접 들어있는 경우도 허용
-        rules.forEach(
-                (key, value) -> {
-                    if (value == null || !isConstraintKey(key)) {
-                        return;
-                    }
-                    String stringValue = String.valueOf(value).trim();
-                    if (stringValue.isEmpty()) {
-                        return;
-                    }
-                    putConstraintWithVersion(constraints, key, stringValue, assignmentVersion);
-                });
     }
 
     // 정책 타입별 ERD rules 변환 함수를 호출
@@ -421,21 +402,6 @@ public class PolicyAssignmentSyncService {
         }
 
         return Optional.empty();
-    }
-
-    // 입력 키가 Redis constraints 정책 키인지 여부를 판별
-    private boolean isConstraintKey(String key) {
-        if (EXACT_POLICY_KEY_TYPES.containsKey(key)) {
-            return true;
-        }
-
-        for (String prefix : PREFIX_POLICY_KEY_TYPES.keySet()) {
-            if (key.startsWith(prefix)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     // 이벤트의 newValue를 trim하고 빈 값은 null로 통일
