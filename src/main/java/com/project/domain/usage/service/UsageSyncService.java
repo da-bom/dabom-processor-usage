@@ -7,6 +7,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
 import com.project.domain.notification.infra.messaging.NotificationKafkaProducer;
+import com.project.domain.policy.service.PolicyConstraintWarmupService;
 import com.project.domain.usage.infra.messaging.UsagePersistKafkaProducer;
 import com.project.domain.usage.infra.messaging.UsageRealtimeKafkaProducer;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
@@ -34,6 +35,10 @@ public class UsageSyncService {
     private final StringRedisTemplate redisTemplate;
     private final RedisKeyGenerator redisKeyGenerator;
 
+    // Redis Warmup Service
+    private final UsageRedisWarmupService usageRedisWarmupService;
+    private final PolicyConstraintWarmupService policyConstraintWarmupService;
+
     // Producers
     private final UsagePersistKafkaProducer persistProducer;
     private final UsageRealtimeKafkaProducer realtimeProducer;
@@ -56,6 +61,22 @@ public class UsageSyncService {
         String constraintsKey =
                 redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId);
         String alertsKey = redisKeyGenerator.generateFamilyAlertsKey(familyId);
+
+        // Warmup
+        boolean familyInfoRedisWarmup =
+                usageRedisWarmupService.ensureFamilyInfoCached(familyId, infoKey);
+        boolean familyRemainingRedisWarmup =
+                usageRedisWarmupService.ensureRemainingBytesCached(familyId, remainingKey);
+        boolean customerMonthlyUsageRedisWarmup =
+                usageRedisWarmupService.ensureCustomerUsageCached(familyId, customerId, monthlyKey);
+        policyConstraintWarmupService.warmupIfMissing(familyId, customerId);
+
+        if (!(familyInfoRedisWarmup
+                && familyRemainingRedisWarmup
+                && customerMonthlyUsageRedisWarmup)) {
+            log.error("Redis Warmup is Failed. eventId={}", eventId);
+            return;
+        }
 
         // Lua Script 실행
         List<Object> result =
