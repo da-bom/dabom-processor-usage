@@ -7,6 +7,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 
+import com.project.domain.usage.enums.UsagePersistProcessResult;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -37,7 +38,6 @@ public class UsagePersistService {
             " familyId={}, customerId={}, bytesUsed={}, currentMonth={}";
     private static final long ALLOWED_PAST_MONTHS = 1;
     private static final long ALLOWED_FUTURE_MONTHS = 0;
-    private static final long SAFE_DEFAULT_MONTHLY_LIMIT_BYTES = 0L;
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;
     private final RedisKeyGenerator redisKeyGenerator;
@@ -72,13 +72,22 @@ public class UsagePersistService {
 
         // 3) 기준 월 계산
         LocalDate currentMonth = resolveCurrentMonth(payload.eventTime());
+        UsagePersistProcessResult processResult =
+                UsagePersistProcessResult.from(payload.processResult());
 
-        // 4) usage_record 저장(event_id 유니크로 멱등 보장)
+        // 4) 차단 상태 이벤트는 차단 상태만 반영한다.
+        if (processResult.isBlocked()) {
+            persistBlockedQuota(
+                    payload, currentMonth, eventId, originEventId, processResult.blockReason());
+            return;
+        }
+
+        // 5) usage_record 저장(event_id 유니크로 멱등 보장)
         if (!persistUsageRecord(payload, eventId, originEventId)) {
             return;
         }
 
-        // 5) DB update 우선, 없으면 insert(+경합 시 update 재시도)
+        // 6) DB update 우선, 없으면 insert(+경합 시 update 재시도)
         persistQuota(payload, currentMonth, eventId, originEventId);
     }
 
@@ -110,7 +119,9 @@ public class UsagePersistService {
                         payload.familyId(),
                         payload.customerId(),
                         currentMonth,
-                        payload.bytesUsed());
+                        payload.bytesUsed(),
+                        false,
+                        null);
         if (updatedRows <= 0) {
             return false;
         }
@@ -133,8 +144,16 @@ public class UsagePersistService {
             String eventId,
             String originEventId) {
         // 신규 월 row 생성 시, 직전 월의 limit 값을 기본값으로 이어받는다
-        long monthlyLimitBytes = resolveMonthlyLimitBytes(payload.familyId(), payload.customerId());
-        CustomerQuota customerQuota = buildCustomerQuota(payload, currentMonth, monthlyLimitBytes);
+        Long monthlyLimitBytes = resolveMonthlyLimitBytes(payload.familyId(), payload.customerId());
+        CustomerQuota customerQuota =
+                buildCustomerQuota(
+                        payload.familyId(),
+                        payload.customerId(),
+                        currentMonth,
+                        monthlyLimitBytes,
+                        payload.bytesUsed(),
+                        false,
+                        null);
         try {
             customerQuotaRepository.saveAndFlush(customerQuota);
         } catch (DataIntegrityViolationException e) {
@@ -167,7 +186,9 @@ public class UsagePersistService {
                         payload.familyId(),
                         payload.customerId(),
                         currentMonth,
-                        payload.bytesUsed());
+                        payload.bytesUsed(),
+                        false,
+                        null);
         if (retriedRows <= 0) {
             return false;
         }
@@ -185,16 +206,96 @@ public class UsagePersistService {
     }
 
     private CustomerQuota buildCustomerQuota(
-            UsagePersistPayload payload, LocalDate currentMonth, long monthlyLimitBytes) {
+            Long familyId,
+            Long customerId,
+            LocalDate currentMonth,
+            Long monthlyLimitBytes,
+            Long monthlyUsedBytes,
+            boolean isBlocked,
+            String blockReason) {
         return CustomerQuota.builder()
-                .familyId(payload.familyId())
-                .customerId(payload.customerId())
-                .monthlyUsedBytes(payload.bytesUsed())
+                .familyId(familyId)
+                .customerId(customerId)
+                .monthlyUsedBytes(monthlyUsedBytes)
                 .currentMonth(currentMonth)
                 .monthlyLimitBytes(monthlyLimitBytes)
-                .isBlocked(false)
-                .blockReason(null)
+                .isBlocked(isBlocked)
+                .blockReason(blockReason)
                 .build();
+    }
+
+    private void persistBlockedQuota(
+            UsagePersistPayload payload,
+            LocalDate currentMonth,
+            String eventId,
+            String originEventId,
+            String blockReason) {
+        if (tryUpdateBlockedQuota(payload, currentMonth, eventId, originEventId, blockReason)) {
+            return;
+        }
+
+        createBlockedQuotaRow(payload, currentMonth, eventId, originEventId, blockReason);
+    }
+
+    private boolean tryUpdateBlockedQuota(
+            UsagePersistPayload payload,
+            LocalDate currentMonth,
+            String eventId,
+            String originEventId,
+            String blockReason) {
+        int updatedRows =
+                customerQuotaRepository.updateBlockState(
+                        payload.familyId(), payload.customerId(), currentMonth, true, blockReason);
+        if (updatedRows <= 0) {
+            return false;
+        }
+
+        log.info(
+                "Persisted blocked state to existing quota row. eventId={}, originEventId={},"
+                        + " familyId={}, customerId={}, blockReason={}, currentMonth={}",
+                logSanitizer.sanitize(eventId),
+                logSanitizer.sanitize(originEventId),
+                payload.familyId(),
+                payload.customerId(),
+                blockReason,
+                currentMonth);
+        return true;
+    }
+
+    private void createBlockedQuotaRow(
+            UsagePersistPayload payload,
+            LocalDate currentMonth,
+            String eventId,
+            String originEventId,
+            String blockReason) {
+        Long monthlyLimitBytes = resolveMonthlyLimitBytes(payload.familyId(), payload.customerId());
+        CustomerQuota customerQuota =
+                buildCustomerQuota(
+                        payload.familyId(),
+                        payload.customerId(),
+                        currentMonth,
+                        monthlyLimitBytes,
+                        0L,
+                        true,
+                        blockReason);
+        try {
+            customerQuotaRepository.saveAndFlush(customerQuota);
+        } catch (DataIntegrityViolationException e) {
+            if (tryUpdateBlockedQuota(payload, currentMonth, eventId, originEventId, blockReason)) {
+                return;
+            }
+            throw e;
+        }
+
+        log.info(
+                "Persisted blocked state by creating quota row. eventId={}, originEventId={},"
+                        + " familyId={}, customerId={}, blockReason={}, currentMonth={}",
+                logSanitizer.sanitize(eventId),
+                logSanitizer.sanitize(originEventId),
+                payload.familyId(),
+                payload.customerId(),
+                blockReason,
+                currentMonth);
     }
 
     private boolean isDuplicated(String originEventId) {
@@ -304,13 +405,25 @@ public class UsagePersistService {
         }
     }
 
-    private long resolveMonthlyLimitBytes(Long familyId, Long customerId) {
+    private Long resolveMonthlyLimitBytes(Long familyId, Long customerId) {
         // 이번 달 row가 없어서 insert할때 과거 row 중 가장 최신 monthlyLimitBytes를 넣음
         return customerQuotaRepository
                 .findTopByFamilyIdAndCustomerIdAndDeletedAtIsNullOrderByCurrentMonthDesc(
                         familyId, customerId)
-                .map(CustomerQuota::getMonthlyLimitBytes)
-                .filter(limit -> limit != null && limit >= 0)
-                .orElse(SAFE_DEFAULT_MONTHLY_LIMIT_BYTES);
+                .map(
+                        quota -> {
+                            Long limit = quota.getMonthlyLimitBytes();
+                            if (limit == null || limit >= 0) {
+                                return limit;
+                            }
+                            log.warn(
+                                    "Invalid previous monthlyLimitBytes. Fallback to null(unlimited)."
+                                            + " familyId={}, customerId={}, monthlyLimitBytes={}",
+                                    familyId,
+                                    customerId,
+                                    limit);
+                            return null;
+                        })
+                .orElse(null);
     }
 }
