@@ -22,7 +22,9 @@ import lombok.NoArgsConstructor;
 @Table(
         name = "usage_record",
         uniqueConstraints = {
-            @UniqueConstraint(name = "uk_usage_record_event_id", columnNames = {"event_id"})
+            @UniqueConstraint(
+                    name = "uk_usage_record_event_id",
+                    columnNames = {"event_id"})
         },
         indexes = {
             @Index(name = "idx_usage_family_time", columnList = "family_id,event_time"),

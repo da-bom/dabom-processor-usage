@@ -31,7 +31,10 @@ public enum UsagePersistProcessResult {
         return Arrays.stream(values())
                 .filter(result -> result.value.equals(rawValue))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Unsupported processResult: " + rawValue));
+                .orElseThrow(
+                        () ->
+                                new IllegalArgumentException(
+                                        "Unsupported processResult: " + rawValue));
     }
 
     public boolean isBlocked() {

@@ -25,7 +25,10 @@ public class CustomerQuotaWriter {
 
     // 허용 이벤트: monthly_used_bytes를 누적 반영한다.
     public void persistAllowedQuota(
-            UsagePersistPayload payload, LocalDate currentMonth, String eventId, String originEventId) {
+            UsagePersistPayload payload,
+            LocalDate currentMonth,
+            String eventId,
+            String originEventId) {
         if (tryUpdateExistingQuota(payload, currentMonth, eventId, originEventId)) {
             return;
         }
@@ -235,8 +238,9 @@ public class CustomerQuotaWriter {
                                 return limit;
                             }
                             log.warn(
-                                    "Invalid previous monthlyLimitBytes. Fallback to null(unlimited)."
-                                            + " familyId={}, customerId={}, monthlyLimitBytes={}",
+                                    "Invalid previous monthlyLimitBytes. Fallback to"
+                                            + " null(unlimited). familyId={}, customerId={},"
+                                            + " monthlyLimitBytes={}",
                                     familyId,
                                     customerId,
                                     limit);

@@ -28,7 +28,8 @@ public class UsageRecordWriter {
 
     // usage_record 저장 성공 여부를 반환한다.
     // false는 유니크 충돌(이미 저장된 이벤트) 케이스다.
-    public boolean persistUsageRecord(UsagePersistPayload payload, String eventId, String originEventId) {
+    public boolean persistUsageRecord(
+            UsagePersistPayload payload, String eventId, String originEventId) {
         UsageRecord usageRecord =
                 UsageRecord.builder()
                         .eventId(originEventId)
