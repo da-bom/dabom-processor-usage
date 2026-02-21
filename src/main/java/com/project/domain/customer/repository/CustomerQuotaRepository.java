@@ -50,4 +50,18 @@ public interface CustomerQuotaRepository extends JpaRepository<CustomerQuota, Lo
             @Param("currentMonth") LocalDate currentMonth,
             @Param("isBlocked") boolean isBlocked,
             @Param("blockReason") String blockReason);
+
+    @Query(
+            """
+        SELECT cq
+        FROM CustomerQuota cq
+        WHERE cq.familyId = :familyId
+          AND cq.customerId = :customerId
+          AND cq.currentMonth = :currentMonth
+          AND cq.deletedAt IS NULL
+        """)
+    Optional<CustomerQuota> findActiveByFamilyIdAndCustomerIdAndCurrentMonth(
+            @Param("familyId") Long familyId,
+            @Param("customerId") Long customerId,
+            @Param("currentMonth") LocalDate currentMonth);
 }

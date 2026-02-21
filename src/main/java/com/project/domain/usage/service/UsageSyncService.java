@@ -1,5 +1,9 @@
 package com.project.domain.usage.service;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -7,6 +11,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
 import com.project.domain.notification.infra.messaging.NotificationKafkaProducer;
+import com.project.domain.policy.service.PolicyConstraintWarmupService;
 import com.project.domain.usage.infra.messaging.UsagePersistKafkaProducer;
 import com.project.domain.usage.infra.messaging.UsageRealtimeKafkaProducer;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
@@ -27,12 +32,19 @@ public class UsageSyncService {
 
     private static final String STATUS_BLOCKED_PREFIX = "BLOCKED";
     private static final String STATUS_WARNING_PREFIX = "WARNING";
+    private static final String STATUS_NORMAL_PREFIX = "NORMAL";
+    private static final ZoneId ASIA_SEOUL = ZoneId.of("Asia/Seoul");
+    private static final DateTimeFormatter HHMM_FORMATTER = DateTimeFormatter.ofPattern("HHmm");
 
     private static final String PERSIST_STATUS_BLOCKED = "BLOCKED";
     private static final String PERSIST_STATUS_ALLOWED = "ALLOWED";
 
     private final StringRedisTemplate redisTemplate;
     private final RedisKeyGenerator redisKeyGenerator;
+
+    // Redis Warmup Service
+    private final UsageRedisWarmupService usageRedisWarmupService;
+    private final PolicyConstraintWarmupService policyConstraintWarmupService;
 
     // Producers
     private final UsagePersistKafkaProducer persistProducer;
@@ -57,12 +69,31 @@ public class UsageSyncService {
                 redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId);
         String alertsKey = redisKeyGenerator.generateFamilyAlertsKey(familyId);
 
-        // Lua Script 실행
+        // Warmup
+        boolean familyInfoRedisWarmup =
+                usageRedisWarmupService.ensureFamilyInfoCached(familyId, infoKey);
+        boolean familyRemainingRedisWarmup =
+                usageRedisWarmupService.ensureRemainingBytesCached(familyId, remainingKey);
+        boolean customerMonthlyUsageRedisWarmup =
+                usageRedisWarmupService.ensureCustomerUsageCached(familyId, customerId, monthlyKey);
+        policyConstraintWarmupService.warmupIfMissing(familyId, customerId);
+
+        if (!familyInfoRedisWarmup
+                || !familyRemainingRedisWarmup
+                || !customerMonthlyUsageRedisWarmup) {
+            log.error("Redis Warmup is Failed. eventId={}", eventId);
+            return;
+        }
+
+        String currentHhmm = resolveCurrentHhmm(eventTime);
+
+        // Lua Script 생성
         List<Object> result =
                 redisTemplate.execute(
                         usageUpdateScript,
                         List.of(infoKey, remainingKey, monthlyKey, constraintsKey, alertsKey),
-                        String.valueOf(usageBytes));
+                        String.valueOf(usageBytes),
+                        currentHhmm);
         if (result == null || result.isEmpty()) {
             log.error("Usage update script returned null. eventId={}", eventId);
             return;
@@ -106,9 +137,10 @@ public class UsageSyncService {
                         customerId,
                         payload.bytesUsed(),
                         payload.appId(),
-                        status.startsWith(STATUS_BLOCKED_PREFIX)
-                                ? PERSIST_STATUS_BLOCKED
-                                : PERSIST_STATUS_ALLOWED,
+                        status.startsWith(STATUS_WARNING_PREFIX)
+                                        || status.equals(STATUS_NORMAL_PREFIX)
+                                ? PERSIST_STATUS_ALLOWED
+                                : status,
                         remaining,
                         ctx.eventTime()));
 
@@ -132,8 +164,8 @@ public class UsageSyncService {
                     new ThresholdAlertPayload(
                             familyId, percent, "가족 데이터가 " + percent + "% 미만입니다!"));
 
-        } else if (status.startsWith(STATUS_BLOCKED_PREFIX)) {
-            // reason: BLOCKED_ACCESS, BLOCKED_LIMIT_MONTHLY, BLOCKED_FAMILY_QUOTA
+        } else if (!status.startsWith(STATUS_NORMAL_PREFIX)) {
+            // reason: TIME_BLOCK, MONTHLY_LIMIT_EXCEEDED, FAMILY_QUOTA_EXCEEDED
             notificationProducer.publish(
                     new CustomerBlockedPayload(familyId, customerId, status, ctx.eventTime()));
         }
@@ -147,6 +179,17 @@ public class UsageSyncService {
         } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
             throw new IllegalArgumentException("Invalid warning status format: " + status, e);
         }
+    }
+
+    private String resolveCurrentHhmm(String eventTime) {
+        if (eventTime != null && !eventTime.isBlank()) {
+            try {
+                return LocalDateTime.parse(eventTime).format(HHMM_FORMATTER);
+            } catch (DateTimeParseException ignored) {
+                log.debug("Failed to parse eventTime. fallback to now. eventTime={}", eventTime);
+            }
+        }
+        return LocalDateTime.now(ASIA_SEOUL).format(HHMM_FORMATTER);
     }
 
     // lua script 결과 파싱
