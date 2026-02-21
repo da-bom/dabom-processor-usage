@@ -2,6 +2,7 @@ package com.project.domain.usage.service;
 
 import org.springframework.stereotype.Component;
 
+import com.project.domain.usage.enums.UsagePersistProcessResult;
 import com.project.global.event.dto.usage.UsagePersistPayload;
 
 import lombok.extern.slf4j.Slf4j;
@@ -43,6 +44,18 @@ public class UsagePersistEventValidator {
                     eventId,
                     payload.originEventId(),
                     payload.bytesUsed());
+            return false;
+        }
+
+        try {
+            UsagePersistProcessResult.from(payload.processResult());
+        } catch (IllegalArgumentException e) {
+            log.warn(
+                    "usage-persist processResult is invalid. eventId={}, originEventId={},"
+                            + " processResult={}",
+                    eventId,
+                    payload.originEventId(),
+                    payload.processResult());
             return false;
         }
 
