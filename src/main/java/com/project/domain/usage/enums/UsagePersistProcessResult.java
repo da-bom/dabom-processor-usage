@@ -3,22 +3,16 @@ package com.project.domain.usage.enums;
 import java.util.Arrays;
 
 public enum UsagePersistProcessResult {
-    BLOCKED_ACCESS("BLOCKED_ACCESS", true, "MANUAL"),
-    BLOCKED_TIME("BLOCKED_TIME", true, "TIME_BLOCK"),
-    BLOCKED_LIMIT_MONTHLY("BLOCKED_LIMIT_MONTHLY", true, "MONTHLY_LIMIT_EXCEEDED"),
-    BLOCKED_FAMILY_QUOTA("BLOCKED_FAMILY_QUOTA", true, "FAMILY_QUOTA_EXCEEDED"),
-    NORMAL("NORMAL", false, null),
-    WARNING_50("WARNING_50", false, null),
-    WARNING_30("WARNING_30", false, null),
-    WARNING_10("WARNING_10", false, null),
-    ALLOWED("ALLOWED", false, null);
+    MANUAL(true, "MANUAL"),
+    TIME_BLOCK(true, "TIME_BLOCK"),
+    MONTHLY_LIMIT_EXCEEDED(true, "MONTHLY_LIMIT_EXCEEDED"),
+    FAMILY_QUOTA_EXCEEDED(true, "FAMILY_QUOTA_EXCEEDED"),
+    ALLOWED(false, null);
 
-    private final String value;
     private final boolean blocked;
     private final String blockReason;
 
-    UsagePersistProcessResult(String value, boolean blocked, String blockReason) {
-        this.value = value;
+    UsagePersistProcessResult(boolean blocked, String blockReason) {
         this.blocked = blocked;
         this.blockReason = blockReason;
     }
@@ -29,7 +23,7 @@ public enum UsagePersistProcessResult {
         }
 
         return Arrays.stream(values())
-                .filter(result -> result.value.equals(rawValue))
+                .filter(result -> result.name().equals(rawValue))
                 .findFirst()
                 .orElseThrow(
                         () ->
