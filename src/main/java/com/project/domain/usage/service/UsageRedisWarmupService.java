@@ -88,7 +88,7 @@ public class UsageRedisWarmupService {
 
             // setIfAbsent가 false면 다시 GET해서 존재 확인
             // 다른 스레드/인스턴스가 먼저 세팅했어도 그건 성공으로 판단
-            return stringRedisTemplate.opsForValue().get(key) != null;
+            return stringRedisTemplate.hasKey(key);
 
         } catch (DataAccessException e) {
             // Redis/DB 접근 계층 예외 (스프링 데이터 공통)
