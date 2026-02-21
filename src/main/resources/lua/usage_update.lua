@@ -65,7 +65,7 @@ local totalLimit = tonumber(limitStr or '0')
 local status = "NORMAL"
 
 if newRemaining <= 0 then
-    status = "BLOCKED_FAMILY"
+    status = "BLOCKED_FAMILY_QUOTA"
 else
     local ratio = 0
     if totalLimit > 0 then
