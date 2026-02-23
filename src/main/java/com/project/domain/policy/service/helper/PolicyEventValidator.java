@@ -1,4 +1,4 @@
-package com.project.domain.policy.service;
+package com.project.domain.policy.service.helper;
 
 import java.util.Map;
 import java.util.function.Predicate;

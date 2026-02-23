@@ -1,4 +1,4 @@
-package com.project.domain.policy.service;
+package com.project.domain.policy.service.helper;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,7 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class PolicyAssignmentSyncService {
+public class PolicyAssignmentSyncHelper {
     private final PolicyAssignmentRepository policyAssignmentRepository;
     private final PolicyRepository policyRepository;
     private final ObjectMapper objectMapper;

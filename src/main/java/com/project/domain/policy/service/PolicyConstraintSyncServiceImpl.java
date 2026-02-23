@@ -3,6 +3,8 @@ package com.project.domain.policy.service;
 import java.time.ZoneOffset;
 import java.util.List;
 
+import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
+import com.project.domain.policy.service.helper.PolicyEventValidator;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -32,7 +34,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
     private final RedisKeyGenerator redisKeyGenerator;
     private final FamilyMemberRepository familyMemberRepository;
     private final PolicyEventValidator policyEventValidator;
-    private final PolicyConstraintWarmupService policyConstraintWarmupService;
+    private final PolicyConstraintWarmupHelper policyConstraintWarmupHelper;
     private final LogSanitizer logSanitizer;
 
     @Value("${app.kafka.dedup.policy-ttl-seconds}")
@@ -101,7 +103,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             }
 
             // Redis constraints 키가 없으면 DB 기반으로 초기 워밍업한다.
-            policyConstraintWarmupService.warmupIfMissing(payload.familyId(), targetCustomerId);
+            policyConstraintWarmupHelper.warmupIfMissing(payload.familyId(), targetCustomerId);
 
             // Lua 원자 연산으로 고객 제약값을 반영한다.
             String result =
@@ -125,7 +127,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
         // family 구성원 단위로 동일 정책을 순차 반영
         for (FamilyMember customer : customers) {
             // 각 customer별 constraints 키 부재 시 DB 값을 기반으로 복구한다.
-            policyConstraintWarmupService.warmupIfMissing(
+            policyConstraintWarmupHelper.warmupIfMissing(
                     payload.familyId(), customer.getCustomerId());
 
             // 워밍업 이후 Lua를 실행해 이벤트 dedup/stale 검사를 함께 처리한다.
