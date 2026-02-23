@@ -10,11 +10,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.project.domain.policy.constant.PolicyConstraintKeyConstants;
 import com.project.domain.policy.constant.PolicyRuleKeyConstants;
 import com.project.domain.policy.entity.Policy;
 import com.project.domain.policy.entity.PolicyAssignment;
 import com.project.domain.policy.enums.PolicyType;
+import com.project.domain.policy.infra.cache.dto.PolicyConstraintRedisHash;
 import com.project.domain.policy.repository.PolicyAssignmentRepository;
 import com.project.domain.policy.repository.PolicyRepository;
 
@@ -49,7 +49,7 @@ public class PolicyAssignmentSyncService {
                         .filter(policy -> !policy.isDeleted() && policy.isActive())
                         .collect(Collectors.toMap(Policy::getId, policy -> policy));
 
-        Map<String, String> constraints = new LinkedHashMap<>();
+        PolicyConstraintRedisHash constraints = PolicyConstraintRedisHash.create();
 
         // family-wide를 먼저 반영한 뒤 customer 전용으로 override
         assignments.stream()
@@ -63,14 +63,14 @@ public class PolicyAssignmentSyncService {
                         assignment ->
                                 applyAssignmentConstraints(assignment, policyById, constraints));
 
-        return constraints;
+        return constraints.toMap();
     }
 
     // 단일 assignment를 Redis constraints 키-값 집합으로 반영
     private void applyAssignmentConstraints(
             PolicyAssignment assignment,
             Map<Long, Policy> policyById,
-            Map<String, String> constraints) {
+            PolicyConstraintRedisHash constraints) {
         // 비활성 assignment 또는 policy 템플릿 미존재 건은 제약 계산 대상에서 제외
         if (!isApplicableAssignment(assignment, policyById)) {
             return;
@@ -94,7 +94,7 @@ public class PolicyAssignmentSyncService {
     private void applyErdRulesByPolicyType(
             PolicyType policyType,
             Map<String, Object> rules,
-            Map<String, String> constraints,
+            PolicyConstraintRedisHash constraints,
             long assignmentVersion) {
         // policy type마다 rules JSON 스키마가 다르므로 전용 변환기로 분기
         switch (policyType) {
@@ -112,50 +112,51 @@ public class PolicyAssignmentSyncService {
 
     // 월 제한 정책의 rules를 LIMIT:DATA:MONTHLY 제약으로 변환
     private void applyMonthlyLimitConstraint(
-            Map<String, Object> rules, Map<String, String> constraints, long assignmentVersion) {
+            Map<String, Object> rules,
+            PolicyConstraintRedisHash constraints,
+            long assignmentVersion) {
         // limitBytes(ERD) -> LIMIT:DATA:MONTHLY(Redis)
         Long limitBytes = toPositiveLong(rules.get(PolicyRuleKeyConstants.LIMIT_BYTES));
         if (limitBytes == null) {
             return;
         }
-        putConstraintWithVersion(
-                constraints,
-                PolicyConstraintKeyConstants.LIMIT_DATA_MONTHLY,
-                String.valueOf(limitBytes),
-                assignmentVersion);
+        constraints.putMonthlyLimit(limitBytes, assignmentVersion);
     }
 
     // 시간대 차단 정책의 rules를 시작/종료 제약으로 변환
     private void applyTimeBlockConstraint(
-            Map<String, Object> rules, Map<String, String> constraints, long assignmentVersion) {
+            Map<String, Object> rules,
+            PolicyConstraintRedisHash constraints,
+            long assignmentVersion) {
         // start/end(ERD, HH:mm) -> BLOCK:TIME:START/END(Redis, HHmm)
         String start = toHhmm(rules.get(PolicyRuleKeyConstants.START));
         String end = toHhmm(rules.get(PolicyRuleKeyConstants.END));
 
         if (start != null) {
-            putConstraintWithVersion(
-                    constraints, PolicyConstraintKeyConstants.BLOCK_TIME_START, start, assignmentVersion);
+            constraints.putTimeBlockStart(start, assignmentVersion);
         }
         if (end != null) {
-            putConstraintWithVersion(
-                    constraints, PolicyConstraintKeyConstants.BLOCK_TIME_END, end, assignmentVersion);
+            constraints.putTimeBlockEnd(end, assignmentVersion);
         }
     }
 
     // 수동 차단 정책의 rules를 접근 차단 제약으로 변환
     private void applyManualBlockConstraint(
-            Map<String, Object> rules, Map<String, String> constraints, long assignmentVersion) {
+            Map<String, Object> rules,
+            PolicyConstraintRedisHash constraints,
+            long assignmentVersion) {
         // reason 값이 존재하면 접근 차단 활성화로 간주
         if (rules.get(PolicyRuleKeyConstants.REASON) == null) {
             return;
         }
-        putConstraintWithVersion(
-                constraints, PolicyConstraintKeyConstants.BLOCK_ACCESS, "1", assignmentVersion);
+        constraints.putManualBlock(assignmentVersion);
     }
 
     // 앱 차단 배열을 개별 BLOCK:APP:{appId} 제약들로 확장
     private void applyAppBlockConstraint(
-            Map<String, Object> rules, Map<String, String> constraints, long assignmentVersion) {
+            Map<String, Object> rules,
+            PolicyConstraintRedisHash constraints,
+            long assignmentVersion) {
         // blockedApps 배열의 각 appId를 BLOCK:APP:{appId}=1 제약으로 반영
         Object blockedAppsObj = rules.get(PolicyRuleKeyConstants.BLOCKED_APPS);
         if (!(blockedAppsObj instanceof List<?> blockedApps)) {
@@ -165,13 +166,7 @@ public class PolicyAssignmentSyncService {
         blockedApps.stream()
                 .map(String::valueOf)
                 .filter(appId -> !appId.isBlank())
-                .forEach(
-                        appId ->
-                                putConstraintWithVersion(
-                                        constraints,
-                                        PolicyConstraintKeyConstants.BLOCK_APP_PREFIX + appId,
-                                        "1",
-                                        assignmentVersion));
+                .forEach(appId -> constraints.putBlockedApp(appId, assignmentVersion));
     }
 
     // rules JSON 문자열을 Map으로 파싱하고 실패 시 빈 맵으로 대체
@@ -185,18 +180,6 @@ public class PolicyAssignmentSyncService {
             log.warn("Failed to parse rules JSON. Fallback to empty rules. rules={}", rulesJson, e);
             return new LinkedHashMap<>();
         }
-    }
-
-    // 정책 값과 버전 필드(ver:policyKey)를 constraints 맵에 함께 기록
-    private void putConstraintWithVersion(
-            Map<String, String> constraints, String policyKey, String value, long version) {
-        constraints.put(policyKey, value);
-        constraints.put(buildVersionField(policyKey), String.valueOf(version));
-    }
-
-    // Lua stale 방지를 위한 버전 필드 키를 생성
-    private String buildVersionField(String policyKey) {
-        return PolicyConstraintKeyConstants.VERSION_FIELD_PREFIX + policyKey;
     }
 
     // assignment의 시간 정보를 epoch millis 버전으로 변환
