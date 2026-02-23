@@ -32,7 +32,6 @@ public class PolicyConstraintSyncService {
     private final RedisKeyGenerator redisKeyGenerator;
     private final FamilyMemberRepository familyMemberRepository;
     private final PolicyEventValidator policyEventValidator;
-    private final PolicyAssignmentSyncService policyAssignmentSyncService;
     private final PolicyConstraintWarmupService policyConstraintWarmupService;
     private final LogSanitizer logSanitizer;
 
@@ -40,7 +39,7 @@ public class PolicyConstraintSyncService {
     private long dedupTtlSeconds;
 
     // policy-updated 이벤트의 진입점:
-    // 1) payload 검증 -> 2) Redis warmup -> 3) Lua 적용 -> 4) APPLIED인 경우 DB 반영
+    // 1) payload 검증 -> 2) Redis warmup -> 3) Lua 적용
     public void sync(EventEnvelope<PolicyUpdatedPayload> envelope, String recordKey) {
         PolicyUpdatedPayload payload = envelope.payload();
         String eventId = envelope.eventId();
@@ -113,11 +112,6 @@ public class PolicyConstraintSyncService {
                             policyKey,
                             newValue);
 
-            // Lua 결과가 APPLIED인 경우에만 DB를 동기화해 stale/duplicate로 인한 DB 오염을 막는다.
-            if (LUA_RESULT_APPLIED.equals(result)) {
-                policyAssignmentSyncService.syncAssignment(
-                        payload.familyId(), targetCustomerId, policyKey, newValue);
-            }
             logResult(eventId, payload.familyId(), targetCustomerId, policyKey, newValue, result);
             return;
         }
@@ -127,7 +121,6 @@ public class PolicyConstraintSyncService {
                 familyMemberRepository.findAllByFamilyIdAndDeletedAtIsNull(payload.familyId());
         int appliedCount = 0;
         int skippedCount = 0;
-        boolean anyApplied = false;
         // family 구성원 단위로 동일 정책을 순차 반영
         for (FamilyMember customer : customers) {
             // 각 customer별 constraints 키 부재 시 DB 값을 기반으로 복구한다.
@@ -145,16 +138,9 @@ public class PolicyConstraintSyncService {
                             newValue);
             if (LUA_RESULT_APPLIED.equals(result)) {
                 appliedCount++;
-                anyApplied = true;
             } else {
                 skippedCount++;
             }
-        }
-
-        // family-wide 이벤트는 개별 customer Lua 결과 중 하나라도 APPLIED면 DB를 1회 동기화한다.
-        if (anyApplied) {
-            policyAssignmentSyncService.syncAssignment(
-                    payload.familyId(), null, policyKey, newValue);
         }
 
         log.info(
