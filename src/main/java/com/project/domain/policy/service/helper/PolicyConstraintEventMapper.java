@@ -2,14 +2,14 @@ package com.project.domain.policy.service.helper;
 
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.domain.policy.constant.PolicyConstraintKeyConstants;
 import com.project.domain.policy.constant.PolicyRuleKeyConstants;
@@ -42,9 +42,9 @@ public class PolicyConstraintEventMapper {
             return String.valueOf(toPositiveLong(newValue, "newValue"));
         }
 
-        Map<String, Object> rules = parseRulesJson(newValue);
-        Object limitBytes = rules.get(PolicyRuleKeyConstants.LIMIT_BYTES);
-        return String.valueOf(toPositiveLong(limitBytes, PolicyRuleKeyConstants.LIMIT_BYTES));
+        JsonNode rules = parseRulesJson(newValue);
+        JsonNode limitBytesNode = rules.get(PolicyRuleKeyConstants.LIMIT_BYTES);
+        return String.valueOf(toPositiveLong(limitBytesNode, PolicyRuleKeyConstants.LIMIT_BYTES));
     }
 
     private String normalizeTimeBlock(String newValue) {
@@ -60,7 +60,7 @@ public class PolicyConstraintEventMapper {
             return normalized;
         }
 
-        Map<String, Object> rules = parseRulesJson(newValue);
+        JsonNode rules = parseRulesJson(newValue);
         String start =
                 toHhmm(rules.get(PolicyRuleKeyConstants.START), PolicyRuleKeyConstants.START);
         String end = toHhmm(rules.get(PolicyRuleKeyConstants.END), PolicyRuleKeyConstants.END);
@@ -79,9 +79,9 @@ public class PolicyConstraintEventMapper {
             throw new IllegalArgumentException("Invalid MANUAL_BLOCK value");
         }
 
-        Map<String, Object> rules = parseRulesJson(newValue);
-        Object reason = rules.get(PolicyRuleKeyConstants.REASON);
-        if (reason == null || String.valueOf(reason).isBlank()) {
+        JsonNode rules = parseRulesJson(newValue);
+        JsonNode reasonNode = rules.get(PolicyRuleKeyConstants.REASON);
+        if (reasonNode == null || reasonNode.isNull() || reasonNode.asText().isBlank()) {
             throw new IllegalArgumentException("MANUAL_BLOCK requires reason");
         }
         return "1";
@@ -92,15 +92,15 @@ public class PolicyConstraintEventMapper {
             return normalizeCsvAppList(newValue);
         }
 
-        Map<String, Object> rules = parseRulesJson(newValue);
-        Object blockedApps = rules.get(PolicyRuleKeyConstants.BLOCKED_APPS);
-        if (!(blockedApps instanceof List<?> appList)) {
+        JsonNode rules = parseRulesJson(newValue);
+        JsonNode blockedAppsNode = rules.get(PolicyRuleKeyConstants.BLOCKED_APPS);
+        if (blockedAppsNode == null || !blockedAppsNode.isArray()) {
             throw new IllegalArgumentException("blockedApps must be an array");
         }
 
         Set<String> apps =
-                appList.stream()
-                        .map(String::valueOf)
+                toList(blockedAppsNode).stream()
+                        .map(JsonNode::asText)
                         .map(String::trim)
                         .filter(appId -> !appId.isBlank())
                         .collect(Collectors.toCollection(LinkedHashSet::new));
@@ -108,6 +108,12 @@ public class PolicyConstraintEventMapper {
             throw new IllegalArgumentException("blockedApps is empty");
         }
         return String.join(",", apps);
+    }
+
+    private List<JsonNode> toList(JsonNode arrayNode) {
+        java.util.ArrayList<JsonNode> result = new java.util.ArrayList<>();
+        arrayNode.forEach(result::add);
+        return result;
     }
 
     private String normalizeCsvAppList(String value) {
@@ -127,7 +133,15 @@ public class PolicyConstraintEventMapper {
             throw new IllegalArgumentException("Missing " + fieldName);
         }
         try {
-            long parsed = Long.parseLong(String.valueOf(value).trim());
+            long parsed;
+            if (value instanceof JsonNode node) {
+                if (!node.isNumber() && !node.isTextual()) {
+                    throw new IllegalArgumentException("Invalid number type for " + fieldName);
+                }
+                parsed = Long.parseLong(node.asText().trim());
+            } else {
+                parsed = Long.parseLong(String.valueOf(value).trim());
+            }
             if (parsed <= 0) {
                 throw new IllegalArgumentException(fieldName + " must be positive");
             }
@@ -141,17 +155,29 @@ public class PolicyConstraintEventMapper {
         if (value == null) {
             throw new IllegalArgumentException("Missing " + fieldName);
         }
-        String normalized = String.valueOf(value).replace(":", "").trim();
+        String normalized;
+        if (value instanceof JsonNode node) {
+            if (!node.isTextual()) {
+                throw new IllegalArgumentException("Invalid HHMM type for " + fieldName);
+            }
+            normalized = node.asText().replace(":", "").trim();
+        } else {
+            normalized = String.valueOf(value).replace(":", "").trim();
+        }
         if (!HHMM_PATTERN.matcher(normalized).matches() || isValidHhmm(normalized)) {
             throw new IllegalArgumentException("Invalid HHMM for " + fieldName);
         }
         return normalized;
     }
 
-    private Map<String, Object> parseRulesJson(String json) {
+    private JsonNode parseRulesJson(String json) {
         try {
-            return objectMapper.readValue(json, new TypeReference<>() {});
-        } catch (Exception e) {
+            JsonNode root = objectMapper.readTree(json);
+            if (root == null || !root.isObject()) {
+                throw new IllegalArgumentException("JSON value must be an object");
+            }
+            return root;
+        } catch (JsonProcessingException e) {
             throw new IllegalArgumentException("Invalid JSON value", e);
         }
     }

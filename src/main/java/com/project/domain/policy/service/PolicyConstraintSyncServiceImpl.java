@@ -57,6 +57,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
         // 이벤트 payload에서 정책 키/값/대상을 추출한다.
         String policyKey = payload.policyKey();
         String newValue = payload.newValue();
+        boolean isActive = payload.isActive();
         Long targetCustomerId = payload.targetCustomerId();
         // timestamp를 버전으로 사용해 역순 이벤트에서도 최신값만 반영
         long eventVersion = resolveEventVersion(envelope);
@@ -73,19 +74,23 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
         }
 
         String normalizedNewValue;
-        try {
-            normalizedNewValue = policyConstraintEventMapper.normalizeValue(policyKey, newValue);
-        } catch (IllegalArgumentException e) {
-            log.warn(
-                    "Invalid policy value. eventId={}, familyId={}, customerId={}, field={},"
-                            + " rawValue={}, reason={}",
-                    logSanitizer.sanitize(eventId),
-                    payload.familyId(),
-                    targetCustomerId,
-                    logSanitizer.sanitize(policyKey),
-                    logSanitizer.sanitize(newValue),
-                    logSanitizer.sanitize(e.getMessage()));
-            return;
+        if (!isActive) {
+            normalizedNewValue = null;
+        } else {
+            try {
+                normalizedNewValue = policyConstraintEventMapper.normalizeValue(policyKey, newValue);
+            } catch (IllegalArgumentException e) {
+                log.warn(
+                        "Invalid policy value. eventId={}, familyId={}, customerId={}, field={},"
+                                + " rawValue={}, reason={}",
+                        logSanitizer.sanitize(eventId),
+                        payload.familyId(),
+                        targetCustomerId,
+                        logSanitizer.sanitize(policyKey),
+                        logSanitizer.sanitize(newValue),
+                        logSanitizer.sanitize(e.getMessage()));
+                return;
+            }
         }
 
         // targetCustomerId가 있으면 해당 customer만 반영
