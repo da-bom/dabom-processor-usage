@@ -61,7 +61,8 @@ public class PolicyConstraintEventMapper {
         }
 
         Map<String, Object> rules = parseRulesJson(newValue);
-        String start = toHhmm(rules.get(PolicyRuleKeyConstants.START), PolicyRuleKeyConstants.START);
+        String start =
+                toHhmm(rules.get(PolicyRuleKeyConstants.START), PolicyRuleKeyConstants.START);
         String end = toHhmm(rules.get(PolicyRuleKeyConstants.END), PolicyRuleKeyConstants.END);
         return start + "-" + end;
     }

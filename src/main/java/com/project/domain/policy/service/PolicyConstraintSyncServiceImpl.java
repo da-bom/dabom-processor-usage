@@ -247,7 +247,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
         }
 
         log.info(
-                "Skipped customer constraint update. eventId={}, familyId={}, customerId={}," 
+                "Skipped customer constraint update. eventId={}, familyId={}, customerId={},"
                         + " field={}, reason={}",
                 logSanitizer.sanitize(eventId),
                 familyId,
@@ -255,5 +255,4 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
                 logSanitizer.sanitize(policyKey),
                 logSanitizer.sanitize(result));
     }
-
 }
