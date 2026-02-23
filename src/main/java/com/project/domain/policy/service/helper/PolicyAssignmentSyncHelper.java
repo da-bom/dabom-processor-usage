@@ -128,15 +128,12 @@ public class PolicyAssignmentSyncHelper {
             Map<String, Object> rules,
             PolicyConstraintRedisHash constraints,
             long assignmentVersion) {
-        // start/end(ERD, HH:mm) -> BLOCK:TIME:START/END(Redis, HHmm)
+        // start/end(ERD, HH:mm) -> BLOCK:TIME(Redis, HHMM-HHMM)
         String start = toHhmm(rules.get(PolicyRuleKeyConstants.START));
         String end = toHhmm(rules.get(PolicyRuleKeyConstants.END));
 
-        if (start != null) {
-            constraints.putTimeBlockStart(start, assignmentVersion);
-        }
-        if (end != null) {
-            constraints.putTimeBlockEnd(end, assignmentVersion);
+        if (start != null && end != null) {
+            constraints.putTimeBlockRange(start + "-" + end, assignmentVersion);
         }
     }
 

@@ -23,12 +23,8 @@ public final class PolicyConstraintRedisHash {
                 version);
     }
 
-    public void putTimeBlockStart(String hhmm, long version) {
-        putWithVersion(PolicyConstraintKeyConstants.BLOCK_TIME_START, hhmm, version);
-    }
-
-    public void putTimeBlockEnd(String hhmm, long version) {
-        putWithVersion(PolicyConstraintKeyConstants.BLOCK_TIME_END, hhmm, version);
+    public void putTimeBlockRange(String timeRange, long version) {
+        putWithVersion(PolicyConstraintKeyConstants.BLOCK_TIME, timeRange, version);
     }
 
     public void putManualBlock(long version) {

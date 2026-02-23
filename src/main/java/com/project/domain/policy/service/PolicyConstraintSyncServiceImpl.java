@@ -2,7 +2,6 @@ package com.project.domain.policy.service;
 
 import java.time.ZoneOffset;
 import java.util.List;
-
 import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
 import com.project.domain.policy.service.helper.PolicyEventValidator;
 import org.springframework.beans.factory.annotation.Value;
@@ -105,7 +104,6 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             // Redis constraints 키가 없으면 DB 기반으로 초기 워밍업한다.
             policyConstraintWarmupHelper.warmupIfMissing(payload.familyId(), targetCustomerId);
 
-            // Lua 원자 연산으로 고객 제약값을 반영한다.
             String result =
                     applyConstraintToCustomer(
                             eventId,
@@ -114,7 +112,6 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
                             targetCustomerId,
                             policyKey,
                             newValue);
-
             logResult(eventId, payload.familyId(), targetCustomerId, policyKey, newValue, result);
             return;
         }
@@ -130,7 +127,6 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             policyConstraintWarmupHelper.warmupIfMissing(
                     payload.familyId(), customer.getCustomerId());
 
-            // 워밍업 이후 Lua를 실행해 이벤트 dedup/stale 검사를 함께 처리한다.
             String result =
                     applyConstraintToCustomer(
                             eventId,
@@ -241,7 +237,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
         }
 
         log.info(
-                "Skipped customer constraint update. eventId={}, familyId={}, customerId={},"
+                "Skipped customer constraint update. eventId={}, familyId={}, customerId={}," 
                         + " field={}, reason={}",
                 logSanitizer.sanitize(eventId),
                 familyId,
@@ -249,4 +245,5 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
                 logSanitizer.sanitize(policyKey),
                 logSanitizer.sanitize(result));
     }
+
 }

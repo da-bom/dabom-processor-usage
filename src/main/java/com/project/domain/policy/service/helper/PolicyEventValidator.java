@@ -1,11 +1,15 @@
 package com.project.domain.policy.service.helper;
 
+import java.util.Arrays;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Component;
 
+import com.project.domain.policy.constant.PolicyConstraintKeyConstants;
 import com.project.global.event.dto.policy.PolicyUpdatedPayload;
 
 import lombok.extern.slf4j.Slf4j;
@@ -14,20 +18,31 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 public class PolicyEventValidator {
     private static final Pattern HHMM_PATTERN = Pattern.compile("^\\d{4}$");
+    private static final Pattern HHMM_RANGE_PATTERN = Pattern.compile("^\\d{4}-\\d{4}$");
     private static final Predicate<String> BINARY_FLAG_VALIDATOR =
             value -> "1".equals(value) || "0".equals(value);
     private static final Predicate<String> POSITIVE_LONG_VALIDATOR =
             PolicyEventValidator::isPositiveLongValue;
-    private static final Predicate<String> HHMM_VALIDATOR = PolicyEventValidator::isValidHhmmValue;
+    private static final Predicate<String> HHMM_RANGE_VALIDATOR =
+            PolicyEventValidator::isValidHhmmRangeValue;
+    private static final Predicate<String> APP_LIST_VALIDATOR =
+            PolicyEventValidator::isValidAppListValue;
 
     private static final Map<String, Predicate<String>> EXACT_VALUE_VALIDATORS =
             Map.of(
-                    "BLOCK:ACCESS", BINARY_FLAG_VALIDATOR,
-                    "BLOCK:TIME:START", HHMM_VALIDATOR,
-                    "BLOCK:TIME:END", HHMM_VALIDATOR);
+                    PolicyConstraintKeyConstants.BLOCK_ACCESS,
+                    BINARY_FLAG_VALIDATOR,
+                    PolicyConstraintKeyConstants.BLOCK_TIME,
+                    HHMM_RANGE_VALIDATOR,
+                    PolicyConstraintKeyConstants.BLOCK_APP,
+                    APP_LIST_VALIDATOR);
 
     private static final Map<String, Predicate<String>> PREFIX_VALUE_VALIDATORS =
-            Map.of("BLOCK:APP:", BINARY_FLAG_VALIDATOR, "LIMIT:DATA:", POSITIVE_LONG_VALIDATOR);
+            Map.of(
+                    PolicyConstraintKeyConstants.BLOCK_APP_PREFIX,
+                    BINARY_FLAG_VALIDATOR,
+                    "LIMIT:DATA:",
+                    POSITIVE_LONG_VALIDATOR);
 
     public boolean isValidPayload(PolicyUpdatedPayload payload, String eventId, String recordKey) {
         if (payload == null) {
@@ -109,5 +124,32 @@ public class PolicyEventValidator {
         int hh = Integer.parseInt(value.substring(0, 2));
         int mm = Integer.parseInt(value.substring(2, 4));
         return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59;
+    }
+
+    private static boolean isValidHhmmRangeValue(String value) {
+        if (!HHMM_RANGE_PATTERN.matcher(value).matches()) {
+            return false;
+        }
+        String[] tokens = value.split("-", -1);
+        if (tokens.length != 2) {
+            return false;
+        }
+        return isValidHhmmValue(tokens[0]) && isValidHhmmValue(tokens[1]);
+    }
+
+    private static boolean isValidAppListValue(String value) {
+        if (value == null || value.isBlank()) {
+            return true;
+        }
+
+        Set<String> appIds =
+                parseCsvValues(value).stream()
+                        .filter(appId -> !appId.isBlank())
+                        .collect(Collectors.toSet());
+        return !appIds.isEmpty();
+    }
+
+    private static Set<String> parseCsvValues(String value) {
+        return Arrays.stream(value.split(",")).map(String::trim).collect(Collectors.toSet());
     }
 }
