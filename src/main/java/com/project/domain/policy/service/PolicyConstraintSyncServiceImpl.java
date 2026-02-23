@@ -2,8 +2,7 @@ package com.project.domain.policy.service;
 
 import java.time.ZoneOffset;
 import java.util.List;
-import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
-import com.project.domain.policy.service.helper.PolicyEventValidator;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -11,6 +10,9 @@ import org.springframework.stereotype.Service;
 
 import com.project.domain.family.entity.FamilyMember;
 import com.project.domain.family.repository.FamilyMemberRepository;
+import com.project.domain.policy.service.helper.PolicyConstraintEventMapper;
+import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
+import com.project.domain.policy.service.helper.PolicyEventValidator;
 import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.policy.PolicyUpdatedPayload;
 import com.project.global.exception.ApplicationException;
@@ -33,6 +35,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
     private final RedisKeyGenerator redisKeyGenerator;
     private final FamilyMemberRepository familyMemberRepository;
     private final PolicyEventValidator policyEventValidator;
+    private final PolicyConstraintEventMapper policyConstraintEventMapper;
     private final PolicyConstraintWarmupHelper policyConstraintWarmupHelper;
     private final LogSanitizer logSanitizer;
 
@@ -69,18 +72,19 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             return;
         }
 
-        // 갱신일 때만 값 형식 검증
-        if (newValue != null
-                && !newValue.isBlank()
-                && !policyEventValidator.isValidPolicyValue(policyKey, newValue)) {
+        String normalizedNewValue;
+        try {
+            normalizedNewValue = policyConstraintEventMapper.normalizeValue(policyKey, newValue);
+        } catch (IllegalArgumentException e) {
             log.warn(
-                    "Invalid policy value. eventId={}, familyId={}, customerId={}, field={}"
-                            + VALUE_LOG_SUFFIX,
+                    "Invalid policy value. eventId={}, familyId={}, customerId={}, field={},"
+                            + " rawValue={}, reason={}",
                     logSanitizer.sanitize(eventId),
                     payload.familyId(),
                     targetCustomerId,
                     logSanitizer.sanitize(policyKey),
-                    logSanitizer.sanitize(newValue));
+                    logSanitizer.sanitize(newValue),
+                    logSanitizer.sanitize(e.getMessage()));
             return;
         }
 
@@ -111,8 +115,14 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
                             payload.familyId(),
                             targetCustomerId,
                             policyKey,
-                            newValue);
-            logResult(eventId, payload.familyId(), targetCustomerId, policyKey, newValue, result);
+                            normalizedNewValue);
+            logResult(
+                    eventId,
+                    payload.familyId(),
+                    targetCustomerId,
+                    policyKey,
+                    normalizedNewValue,
+                    result);
             return;
         }
 
@@ -134,7 +144,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
                             payload.familyId(),
                             customer.getCustomerId(),
                             policyKey,
-                            newValue);
+                            normalizedNewValue);
             if (LUA_RESULT_APPLIED.equals(result)) {
                 appliedCount++;
             } else {
@@ -151,7 +161,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
                 appliedCount,
                 skippedCount,
                 logSanitizer.sanitize(policyKey),
-                logSanitizer.sanitize(newValue));
+                logSanitizer.sanitize(normalizedNewValue));
     }
 
     private String applyConstraintToCustomer(
