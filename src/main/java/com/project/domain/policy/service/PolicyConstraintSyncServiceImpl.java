@@ -74,10 +74,12 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
         }
 
         String normalizedNewValue;
+        // 비활성화 정책이면 newValue를 null 처리
         if (!isActive) {
             normalizedNewValue = null;
         } else {
             try {
+                // JSON 형태의 newValue 정규화
                 normalizedNewValue = policyConstraintEventMapper.normalizeValue(policyKey, newValue);
             } catch (IllegalArgumentException e) {
                 log.warn(
