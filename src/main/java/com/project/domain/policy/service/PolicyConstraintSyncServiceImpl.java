@@ -271,7 +271,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
     private Set<String> loadBlockedApps(String constraintsKey) {
         // constraints hash의 field 목록 중 BLOCK:APP: prefix만 추출해 앱 ID 집합으로 변환
         Set<Object> fields = familyStringRedisTemplate.opsForHash().keys(constraintsKey);
-        if (fields == null || fields.isEmpty()) {
+        if (fields.isEmpty()) {
             return Set.of();
         }
 
