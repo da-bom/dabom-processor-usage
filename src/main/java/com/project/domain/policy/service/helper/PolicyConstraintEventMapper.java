@@ -110,7 +110,7 @@ public class PolicyConstraintEventMapper {
             throw new IllegalArgumentException("Invalid HHMM type for " + fieldName);
         }
         String normalized = value.asText().replace(":", "").trim();
-        if (!HHMM_PATTERN.matcher(normalized).matches() || isValidHhmm(normalized)) {
+        if (!HHMM_PATTERN.matcher(normalized).matches() || !isValidHhmm(normalized)) {
             throw new IllegalArgumentException("Invalid HHMM for " + fieldName);
         }
         return normalized;
@@ -135,6 +135,6 @@ public class PolicyConstraintEventMapper {
     private boolean isValidHhmm(String hhmm) {
         int hh = Integer.parseInt(hhmm.substring(0, 2));
         int mm = Integer.parseInt(hhmm.substring(2, 4));
-        return hh < 0 || hh > 23 || mm < 0 || mm > 59;
+        return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59;
     }
 }
