@@ -21,7 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.project.domain.usage.service.UsageSyncServiceImpl;
+import com.project.domain.usage.service.UsageSyncService;
 import com.project.domain.usage.service.helper.UsageEventValidator;
 import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.usage.UsagePayload;
@@ -33,7 +33,7 @@ class UsageEventsConsumerTest {
 
     @Mock private ObjectMapper objectMapper;
 
-    @Mock private UsageSyncServiceImpl usageSyncServiceImpl;
+    @Mock private UsageSyncService usageSyncService;
 
     @Mock private UsageEventValidator validator;
 
@@ -57,7 +57,7 @@ class UsageEventsConsumerTest {
         consumer.consume(consumerRecord);
 
         // then
-        verify(usageSyncServiceImpl, times(1))
+        verify(usageSyncService, times(1))
                 .syncUsage(
                         eq(envelope.eventId()),
                         anyString(), // timestamp string
@@ -84,7 +84,7 @@ class UsageEventsConsumerTest {
         consumer.consume(consumerRecord);
 
         // then
-        verify(usageSyncServiceImpl, never()).syncUsage(any(), any(), any());
+        verify(usageSyncService, never()).syncUsage(any(), any(), any());
     }
 
     @Test
@@ -102,6 +102,6 @@ class UsageEventsConsumerTest {
         consumer.consume(consumerRecord);
 
         // then
-        verify(usageSyncServiceImpl, never()).syncUsage(any(), any(), any());
+        verify(usageSyncService, never()).syncUsage(any(), any(), any());
     }
 }
