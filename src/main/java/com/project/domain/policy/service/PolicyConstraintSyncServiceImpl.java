@@ -132,7 +132,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
         }
 
         log.info(
-                "Processed family-wide constraint. eventId={}, familyId={}, appliedCount={}," 
+                "Processed family-wide constraint. eventId={}, familyId={}, appliedCount={},"
                         + " skippedCount={}, field={}"
                         + VALUE_LOG_SUFFIX,
                 logSanitizer.sanitize(eventId),
@@ -197,10 +197,10 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             // BLOCK:APP은 현재 Redis 상태와 목표 앱 목록을 diff로 동기화
             boolean changed =
                     syncBlockedAppsToCustomer(
-                    familyId,
-                    customerId,
-                    normalizedPolicyValue.normalizedBlockedApps(),
-                    eventVersion);
+                            familyId,
+                            customerId,
+                            normalizedPolicyValue.normalizedBlockedApps(),
+                            eventVersion);
             logResult(
                     eventId,
                     familyId,
@@ -278,7 +278,10 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
         return fields.stream()
                 .map(String::valueOf)
                 .filter(field -> field.startsWith(PolicyConstraintKeyConstants.BLOCK_APP_PREFIX))
-                .map(field -> field.substring(PolicyConstraintKeyConstants.BLOCK_APP_PREFIX.length()))
+                .map(
+                        field ->
+                                field.substring(
+                                        PolicyConstraintKeyConstants.BLOCK_APP_PREFIX.length()))
                 .filter(appId -> !appId.isBlank())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
