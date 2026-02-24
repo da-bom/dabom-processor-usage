@@ -1,15 +1,20 @@
 package com.project.domain.policy.service;
 
 import java.time.ZoneOffset;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
 import com.project.domain.family.entity.FamilyMember;
 import com.project.domain.family.repository.FamilyMemberRepository;
+import com.project.domain.policy.constant.PolicyConstraintKeyConstants;
 import com.project.domain.policy.service.helper.PolicyConstraintEventMapper;
 import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
 import com.project.domain.policy.service.helper.PolicyEventValidator;
@@ -73,6 +78,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             return;
         }
 
+        Set<String> normalizedBlockedApps = Set.of();
         String normalizedNewValue;
         // 비활성화 정책이면 newValue를 null 처리
         if (!isActive) {
@@ -80,8 +86,15 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
         } else {
             try {
                 // JSON 형태의 newValue 정규화
-                normalizedNewValue =
-                        policyConstraintEventMapper.normalizeValue(policyKey, newValue);
+                if (PolicyConstraintKeyConstants.BLOCK_APP.equals(policyKey)) {
+                    // BLOCK:APP은 문자열이 아닌 앱 ID 집합 형태로도 함께 보관한다.
+                    normalizedBlockedApps =
+                            policyConstraintEventMapper.normalizeAppBlockValueAsSet(newValue);
+                    normalizedNewValue = String.join(",", normalizedBlockedApps);
+                } else {
+                    normalizedNewValue =
+                            policyConstraintEventMapper.normalizeValue(policyKey, newValue);
+                }
             } catch (IllegalArgumentException e) {
                 log.warn(
                         "Invalid policy value. eventId={}, familyId={}, customerId={}, field={},"
@@ -116,21 +129,47 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             // Redis constraints 키가 없으면 DB 기반으로 초기 워밍업한다.
             policyConstraintWarmupHelper.warmupIfMissing(payload.familyId(), targetCustomerId);
 
-            String result =
-                    applyConstraintToCustomer(
-                            eventId,
-                            eventVersion,
+            if (PolicyConstraintKeyConstants.BLOCK_APP.equals(policyKey)) {
+                // BLOCK:APP은 목표 집합(desired)과 현재 Redis 집합(current)을 비교해 증분 동기화
+                boolean changed =
+                        syncBlockedAppsToCustomer(
+                                payload.familyId(),
+                                targetCustomerId,
+                                isActive ? normalizedBlockedApps : Set.of(),
+                                eventVersion);
+                if (changed) {
+                    log.info(
+                            "Updated customer app-block constraints. eventId={}, familyId={},"
+                                    + " customerId={}, size={}",
+                            logSanitizer.sanitize(eventId),
                             payload.familyId(),
                             targetCustomerId,
-                            policyKey,
-                            normalizedNewValue);
-            logResult(
-                    eventId,
-                    payload.familyId(),
-                    targetCustomerId,
-                    policyKey,
-                    normalizedNewValue,
-                    result);
+                            isActive ? normalizedBlockedApps.size() : 0);
+                } else {
+                    log.info(
+                            "Skipped customer app-block constraints update due to no changes."
+                                    + " eventId={}, familyId={}, customerId={}",
+                            logSanitizer.sanitize(eventId),
+                            payload.familyId(),
+                            targetCustomerId);
+                }
+            } else {
+                String result =
+                        applyConstraintToCustomer(
+                                eventId,
+                                eventVersion,
+                                payload.familyId(),
+                                targetCustomerId,
+                                policyKey,
+                                normalizedNewValue);
+                logResult(
+                        eventId,
+                        payload.familyId(),
+                        targetCustomerId,
+                        policyKey,
+                        normalizedNewValue,
+                        result);
+            }
             return;
         }
 
@@ -145,18 +184,33 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             policyConstraintWarmupHelper.warmupIfMissing(
                     payload.familyId(), customer.getCustomerId());
 
-            String result =
-                    applyConstraintToCustomer(
-                            eventId,
-                            eventVersion,
-                            payload.familyId(),
-                            customer.getCustomerId(),
-                            policyKey,
-                            normalizedNewValue);
-            if (LUA_RESULT_APPLIED.equals(result)) {
-                appliedCount++;
+            if (PolicyConstraintKeyConstants.BLOCK_APP.equals(policyKey)) {
+                // family-wide도 customer별로 BLOCK:APP 집합을 동기화한다.
+                boolean changed =
+                        syncBlockedAppsToCustomer(
+                                payload.familyId(),
+                                customer.getCustomerId(),
+                                isActive ? normalizedBlockedApps : Set.of(),
+                                eventVersion);
+                if (changed) {
+                    appliedCount++;
+                } else {
+                    skippedCount++;
+                }
             } else {
-                skippedCount++;
+                String result =
+                        applyConstraintToCustomer(
+                                eventId,
+                                eventVersion,
+                                payload.familyId(),
+                                customer.getCustomerId(),
+                                policyKey,
+                                normalizedNewValue);
+                if (LUA_RESULT_APPLIED.equals(result)) {
+                    appliedCount++;
+                } else {
+                    skippedCount++;
+                }
             }
         }
 
@@ -170,6 +224,64 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
                 skippedCount,
                 logSanitizer.sanitize(policyKey),
                 logSanitizer.sanitize(normalizedNewValue));
+    }
+
+    private boolean syncBlockedAppsToCustomer(
+            Long familyId, Long customerId, Set<String> desiredBlockedApps, long eventVersion) {
+        // 현재 Redis에 저장된 앱 차단 필드(BLOCK:APP:{appId})를 조회
+        String constraintsKey =
+                redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId);
+        Set<String> currentBlockedApps = loadBlockedApps(constraintsKey);
+
+        // 현재값 기준으로 삭제/추가 대상(diff)을 계산
+        Set<String> appsToDelete = new LinkedHashSet<>(currentBlockedApps);
+        appsToDelete.removeAll(desiredBlockedApps);
+
+        Set<String> appsToAdd = new LinkedHashSet<>(desiredBlockedApps);
+        appsToAdd.removeAll(currentBlockedApps);
+
+        if (appsToDelete.isEmpty() && appsToAdd.isEmpty()) {
+            return false;
+        }
+
+        HashOperations<String, Object, Object> hashOps = familyStringRedisTemplate.opsForHash();
+        String version = String.valueOf(eventVersion);
+
+        // 제거 대상은 앱 필드 삭제 + 버전 필드 갱신
+        for (String appId : appsToDelete) {
+            String appField = PolicyConstraintKeyConstants.BLOCK_APP_PREFIX + appId;
+            hashOps.delete(constraintsKey, appField);
+            hashOps.put(constraintsKey, buildVersionField(appField), version);
+        }
+
+        // 추가 대상은 앱 필드("1") 저장 + 버전 필드 갱신
+        for (String appId : appsToAdd) {
+            String appField = PolicyConstraintKeyConstants.BLOCK_APP_PREFIX + appId;
+            hashOps.put(constraintsKey, appField, "1");
+            hashOps.put(constraintsKey, buildVersionField(appField), version);
+        }
+
+        return true;
+    }
+
+    private Set<String> loadBlockedApps(String constraintsKey) {
+        // constraints hash의 field 목록 중 BLOCK:APP: prefix만 추출해 앱 ID 집합으로 변환
+        Set<Object> fields = familyStringRedisTemplate.opsForHash().keys(constraintsKey);
+        if (fields == null || fields.isEmpty()) {
+            return Set.of();
+        }
+
+        return fields.stream()
+                .map(String::valueOf)
+                .filter(field -> field.startsWith(PolicyConstraintKeyConstants.BLOCK_APP_PREFIX))
+                .map(field -> field.substring(PolicyConstraintKeyConstants.BLOCK_APP_PREFIX.length()))
+                .filter(appId -> !appId.isBlank())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private String buildVersionField(String policyKey) {
+        // Lua 버전 비교와 동일 규칙(ver:{field})을 맞춰 버전 필드를 생성
+        return PolicyConstraintKeyConstants.VERSION_FIELD_PREFIX + policyKey;
     }
 
     private String applyConstraintToCustomer(
