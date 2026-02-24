@@ -8,7 +8,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
@@ -243,6 +242,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             // BLOCK:APP은 현재 Redis 상태와 목표 앱 목록을 diff로 동기화
             boolean changed =
                     syncBlockedAppsToCustomer(
+                            eventId,
                             familyId,
                             customerId,
                             normalizedPolicyValue.normalizedBlockedApps(),
@@ -277,7 +277,11 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
     }
 
     private boolean syncBlockedAppsToCustomer(
-            Long familyId, Long customerId, Set<String> desiredBlockedApps, long eventVersion) {
+            String eventId,
+            Long familyId,
+            Long customerId,
+            Set<String> desiredBlockedApps,
+            long eventVersion) {
         // 현재 Redis에 저장된 앱 차단 필드(BLOCK:APP:{appId})를 조회
         String constraintsKey =
                 redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId);
@@ -294,24 +298,40 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             return false;
         }
 
-        HashOperations<String, Object, Object> hashOps = familyStringRedisTemplate.opsForHash();
-        String version = String.valueOf(eventVersion);
+        int appliedCount = 0;
 
-        // 제거 대상은 앱 필드와 버전 필드를 함께 삭제
+        // 앱별 Lua 실행으로 dedup/stale/version 검증을 동일하게 적용
         for (String appId : appsToDelete) {
             String appField = PolicyConstraintKeyConstants.BLOCK_APP_PREFIX + appId;
-            hashOps.delete(constraintsKey, appField);
-            hashOps.delete(constraintsKey, buildVersionField(appField));
+            String result =
+                    applyConstraintToCustomer(
+                            eventId + ":" + appField,
+                            eventVersion,
+                            familyId,
+                            customerId,
+                            appField,
+                            null);
+            if (LUA_RESULT_APPLIED.equals(result)) {
+                appliedCount++;
+            }
         }
 
-        // 추가 대상은 앱 필드("1") 저장 + 버전 필드 갱신
         for (String appId : appsToAdd) {
             String appField = PolicyConstraintKeyConstants.BLOCK_APP_PREFIX + appId;
-            hashOps.put(constraintsKey, appField, "1");
-            hashOps.put(constraintsKey, buildVersionField(appField), version);
+            String result =
+                    applyConstraintToCustomer(
+                            eventId + ":" + appField,
+                            eventVersion,
+                            familyId,
+                            customerId,
+                            appField,
+                            "1");
+            if (LUA_RESULT_APPLIED.equals(result)) {
+                appliedCount++;
+            }
         }
 
-        return true;
+        return appliedCount > 0;
     }
 
     private Set<String> loadBlockedApps(String constraintsKey) {
@@ -330,11 +350,6 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
                                         PolicyConstraintKeyConstants.BLOCK_APP_PREFIX.length()))
                 .filter(appId -> !appId.isBlank())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
-    }
-
-    private String buildVersionField(String policyKey) {
-        // Lua 버전 비교와 동일 규칙(ver:{field})을 맞춰 버전 필드를 생성
-        return PolicyConstraintKeyConstants.VERSION_FIELD_PREFIX + policyKey;
     }
 
     private String applyConstraintToCustomer(
