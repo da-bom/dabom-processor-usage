@@ -12,7 +12,6 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
-import com.project.domain.family.entity.FamilyMember;
 import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.policy.constant.PolicyConstraintKeyConstants;
 import com.project.domain.policy.service.helper.PolicyConstraintEventMapper;
@@ -115,17 +114,17 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
         }
 
         // targetCustomerId가 없으면 family 전체(active customer)에게 반영
-        List<FamilyMember> customers =
-                familyMemberRepository.findAllByFamilyIdAndDeletedAtIsNull(payload.familyId());
+        List<FamilyMemberRepository.FamilyMemberTargetProjection> customers =
+                familyMemberRepository.findAllActiveTargetsByFamilyId(payload.familyId());
         int appliedCount = 0;
         int skippedCount = 0;
 
         // family 구성원 단위로 동일 정책을 순차 반영
-        for (FamilyMember customer : customers) {
+        for (FamilyMemberRepository.FamilyMemberTargetProjection customer : customers) {
             boolean applied =
                     processCustomerPolicyUpdate(
                             eventId,
-                            payload.familyId(),
+                            customer.getFamilyId(),
                             customer.getCustomerId(),
                             policyKey,
                             eventVersion,
