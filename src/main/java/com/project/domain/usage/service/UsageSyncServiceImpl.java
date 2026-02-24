@@ -4,23 +4,15 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.util.List;
 
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
-import com.project.domain.notification.infra.messaging.NotificationKafkaProducer;
 import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
-import com.project.domain.usage.infra.messaging.UsagePersistKafkaProducer;
-import com.project.domain.usage.infra.messaging.UsageRealtimeKafkaProducer;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
+import com.project.domain.usage.service.helper.UsageEventPublisher;
+import com.project.domain.usage.service.helper.UsageLuaExecutor;
 import com.project.domain.usage.service.helper.UsageRedisWarmupHelper;
-import com.project.global.event.dto.notification.CustomerBlockedPayload;
-import com.project.global.event.dto.notification.ThresholdAlertPayload;
 import com.project.global.event.dto.usage.UsagePayload;
-import com.project.global.event.dto.usage.UsagePersistPayload;
-import com.project.global.event.dto.usage.UsageRealtimePayload;
 import com.project.global.util.RedisKeyGenerator;
 
 import lombok.RequiredArgsConstructor;
@@ -31,28 +23,21 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class UsageSyncServiceImpl implements UsageSyncService {
 
-    private static final String STATUS_WARNING_PREFIX = "WARNING";
-    private static final String STATUS_NORMAL_PREFIX = "NORMAL";
     private static final ZoneId ASIA_SEOUL = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter HHMM_FORMATTER = DateTimeFormatter.ofPattern("HHmm");
 
-    private static final String PERSIST_STATUS_ALLOWED = "ALLOWED";
-
-    private final StringRedisTemplate redisTemplate;
     private final RedisKeyGenerator redisKeyGenerator;
 
     // Redis Warmup Service
     private final UsageRedisWarmupHelper usageRedisWarmupHelper;
     private final PolicyConstraintWarmupHelper policyConstraintWarmupHelper;
 
-    // Producers
-    private final UsagePersistKafkaProducer persistProducer;
-    private final UsageRealtimeKafkaProducer realtimeProducer;
-    private final NotificationKafkaProducer notificationProducer;
+    // Lua Script 실행기
+    private final UsageLuaExecutor usageLuaExecutor;
+    // 이벤트 발행기
+    private final UsageEventPublisher usageEventPublisher;
 
-    // Lua Script
-    private final RedisScript<List<Object>> usageUpdateScript;
-
+    @Override
     public void syncUsage(String eventId, String eventTime, UsagePayload payload) {
 
         Long familyId = payload.familyId();
@@ -86,101 +71,31 @@ public class UsageSyncServiceImpl implements UsageSyncService {
 
         String currentHhmm = resolveCurrentHhmm(eventTime);
 
-        // Lua Script 생성
-        List<Object> result =
-                redisTemplate.execute(
-                        usageUpdateScript,
-                        List.of(infoKey, remainingKey, monthlyKey, constraintsKey, alertsKey),
-                        String.valueOf(usageBytes),
-                        currentHhmm);
-        if (result == null || result.isEmpty()) {
-            log.error("Usage update script returned null. eventId={}", eventId);
-            return;
-        }
-
-        UsageUpdateResult parsed = parseScriptResult(result, eventId);
+        // Lua Script 실행 + 결과 파싱
+        UsageUpdateResult parsed =
+                usageLuaExecutor.execute(
+                        new UsageLuaExecutor.UsageLuaCommand(
+                                infoKey,
+                                remainingKey,
+                                monthlyKey,
+                                constraintsKey,
+                                alertsKey,
+                                usageBytes,
+                                currentHhmm),
+                        eventId);
         log.debug(
                 "Usage Synced: family={}, customer={}, status={}",
                 familyId,
                 customerId,
                 parsed.status());
 
-        UsageSyncContext ctx = new UsageSyncContext(eventId, eventTime, payload, parsed);
-
         // 이벤트 전파
-        publishEvents(ctx);
-    }
-
-    private void publishEvents(UsageSyncContext ctx) {
-
-        UsagePayload payload = ctx.payload();
-
-        long familyId = payload.familyId();
-        long customerId = payload.customerId();
-
-        long totalUsed = ctx.result().totalUsed();
-        long remaining = ctx.result().remaining();
-        String status = ctx.result().status();
-        long monthlyUsed = ctx.result().monthlyUsed();
-        double userRatio = ctx.result().userRatio();
-        long monthlyLimit = ctx.result().monthlyLimit();
-
-        long totalLimit = totalUsed + remaining;
-        double usedPercent = totalLimit > 0 ? (double) totalUsed / totalLimit * 100.0 : 0.0;
-
-        // DB 저장 이벤트 (Persist)
-        persistProducer.publish(
-                new UsagePersistPayload(
-                        ctx.eventId(),
-                        familyId,
-                        customerId,
-                        payload.bytesUsed(),
-                        payload.appId(),
-                        status.startsWith(STATUS_WARNING_PREFIX)
-                                        || status.equals(STATUS_NORMAL_PREFIX)
-                                ? PERSIST_STATUS_ALLOWED
-                                : status,
-                        remaining,
-                        ctx.eventTime()));
-
-        // 실시간 사용량 이벤트 (Realtime)
-        realtimeProducer.publish(
-                new UsageRealtimePayload(
-                        familyId,
-                        customerId,
-                        totalUsed,
-                        totalLimit,
-                        remaining,
-                        usedPercent,
-                        monthlyUsed,
-                        userRatio * 100.0,
-                        monthlyLimit));
-
-        // 알림 이벤트 (Notification)
-        if (status.startsWith(STATUS_WARNING_PREFIX)) {
-            int percent = parsePercent(status);
-            notificationProducer.publish(
-                    new ThresholdAlertPayload(
-                            familyId, percent, "가족 데이터가 " + percent + "% 미만입니다!"));
-
-        } else if (!status.startsWith(STATUS_NORMAL_PREFIX)) {
-            // reason: TIME_BLOCK, MONTHLY_LIMIT_EXCEEDED, FAMILY_QUOTA_EXCEEDED
-            notificationProducer.publish(
-                    new CustomerBlockedPayload(familyId, customerId, status, ctx.eventTime()));
-        }
-    }
-
-    // 임계치 판정
-    private int parsePercent(String status) {
-        // "WARNING_10" -> 10
-        try {
-            return Integer.parseInt(status.split("_")[1]);
-        } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
-            throw new IllegalArgumentException("Invalid warning status format: " + status, e);
-        }
+        usageEventPublisher.publish(
+                new UsageEventPublisher.UsageEventContext(eventId, eventTime, payload, parsed));
     }
 
     private String resolveCurrentHhmm(String eventTime) {
+        // producer가 전달한 eventTime이 있으면 우선 사용한다.
         if (eventTime != null && !eventTime.isBlank()) {
             try {
                 return LocalDateTime.parse(eventTime).format(HHMM_FORMATTER);
@@ -188,36 +103,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
                 log.debug("Failed to parse eventTime. fallback to now. eventTime={}", eventTime);
             }
         }
+        // eventTime이 없거나 파싱 실패 시 서버 현재 시각으로 보정한다.
         return LocalDateTime.now(ASIA_SEOUL).format(HHMM_FORMATTER);
     }
-
-    // lua script 결과 파싱
-    private UsageUpdateResult parseScriptResult(List<Object> result, String eventId) {
-        if (result == null || result.size() < 6) {
-            log.error(
-                    "Usage update script returned invalid result. eventId={}, result={}",
-                    eventId,
-                    result);
-            throw new IllegalStateException("Invalid Lua script result");
-        }
-
-        long totalUsed = ((Number) result.get(0)).longValue();
-        long remaining = ((Number) result.get(1)).longValue();
-        String status = (String) result.get(2);
-        long monthlyUsed = ((Number) result.get(3)).longValue();
-
-        Object userRatioObj = result.get(4);
-        double userRatio =
-                (userRatioObj instanceof Number number)
-                        ? number.doubleValue()
-                        : Double.parseDouble(userRatioObj.toString());
-
-        long monthlyLimit = ((Number) result.get(5)).longValue();
-
-        return new UsageUpdateResult(
-                totalUsed, remaining, status, monthlyUsed, userRatio, monthlyLimit);
-    }
-
-    private record UsageSyncContext(
-            String eventId, String eventTime, UsagePayload payload, UsageUpdateResult result) {}
 }
