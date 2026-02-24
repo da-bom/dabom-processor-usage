@@ -4,6 +4,7 @@ import java.time.ZoneId;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -155,24 +156,26 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             NormalizedPolicyValue normalizedPolicyValue) {
         List<FamilyMemberRepository.FamilyMemberTargetProjection> members =
                 familyMemberRepository.findAllActiveTargets();
-        int appliedCount = 0;
-        int skippedCount = 0;
+        AtomicInteger appliedCount = new AtomicInteger(0);
+        AtomicInteger skippedCount = new AtomicInteger(0);
 
-        for (FamilyMemberRepository.FamilyMemberTargetProjection member : members) {
-            boolean applied =
-                    processCustomerPolicyUpdate(
-                            eventId,
-                            member.getFamilyId(),
-                            member.getCustomerId(),
-                            policyKey,
-                            eventVersion,
-                            normalizedPolicyValue);
-            if (applied) {
-                appliedCount++;
-            } else {
-                skippedCount++;
-            }
-        }
+        members.parallelStream()
+                .forEach(
+                        member -> {
+                            boolean applied =
+                                    processCustomerPolicyUpdate(
+                                            eventId,
+                                            member.getFamilyId(),
+                                            member.getCustomerId(),
+                                            policyKey,
+                                            eventVersion,
+                                            normalizedPolicyValue);
+                            if (applied) {
+                                appliedCount.incrementAndGet();
+                            } else {
+                                skippedCount.incrementAndGet();
+                            }
+                        });
 
         log.info(
                 "Processed global constraint. eventId={}, appliedCount={}, skippedCount={},"
