@@ -34,6 +34,7 @@ import lombok.extern.slf4j.Slf4j;
 public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncService {
     private static final String VALUE_LOG_SUFFIX = ", value={}";
     private static final String LUA_RESULT_APPLIED = "APPLIED";
+    private static final ZoneId ASIA_SEOUL = ZoneId.of("Asia/Seoul");
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;
     private final RedisScript<List<String>> policyConstraintUpdateScript;
@@ -395,7 +396,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             return System.currentTimeMillis();
         }
         // timestamp를 KST 기준 epoch millis로 변환해 Lua 버전 비교에 사용
-        return envelope.timestamp().atZone(ZoneId.of("Asia/Seoul")).toInstant().toEpochMilli();
+        return envelope.timestamp().atZone(ASIA_SEOUL).toInstant().toEpochMilli();
     }
 
     private void logResult(
