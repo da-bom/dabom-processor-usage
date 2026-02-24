@@ -20,7 +20,6 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class PolicyConstraintEventMapper {
     private static final Pattern HHMM_PATTERN = Pattern.compile("^\\d{4}$");
-    private static final Pattern HHMM_RANGE_PATTERN = Pattern.compile("^\\d{4}-\\d{4}$");
 
     private final ObjectMapper objectMapper;
 
@@ -38,28 +37,12 @@ public class PolicyConstraintEventMapper {
     }
 
     private String normalizeMonthlyLimit(String newValue) {
-        if (looksLikeJson(newValue)) {
-            return String.valueOf(toPositiveLong(newValue, "newValue"));
-        }
-
         JsonNode rules = parseRulesJson(newValue);
         JsonNode limitBytesNode = rules.get(PolicyRuleKeyConstants.LIMIT_BYTES);
         return String.valueOf(toPositiveLong(limitBytesNode, PolicyRuleKeyConstants.LIMIT_BYTES));
     }
 
     private String normalizeTimeBlock(String newValue) {
-        if (looksLikeJson(newValue)) {
-            String normalized = newValue.trim();
-            if (!HHMM_RANGE_PATTERN.matcher(normalized).matches()) {
-                throw new IllegalArgumentException("TIME_BLOCK format must be HHMM-HHMM");
-            }
-            String[] tokens = normalized.split("-", -1);
-            if (tokens.length != 2 || isValidHhmm(tokens[0]) || isValidHhmm(tokens[1])) {
-                throw new IllegalArgumentException("Invalid TIME_BLOCK range");
-            }
-            return normalized;
-        }
-
         JsonNode rules = parseRulesJson(newValue);
         String start =
                 toHhmm(rules.get(PolicyRuleKeyConstants.START), PolicyRuleKeyConstants.START);
@@ -68,17 +51,6 @@ public class PolicyConstraintEventMapper {
     }
 
     private String normalizeManualBlock(String newValue) {
-        if (looksLikeJson(newValue)) {
-            String normalized = newValue.trim();
-            if ("1".equals(normalized)) {
-                return "1";
-            }
-            if ("0".equals(normalized)) {
-                return null;
-            }
-            throw new IllegalArgumentException("Invalid MANUAL_BLOCK value");
-        }
-
         JsonNode rules = parseRulesJson(newValue);
         JsonNode reasonNode = rules.get(PolicyRuleKeyConstants.REASON);
         if (reasonNode == null || reasonNode.isNull() || reasonNode.asText().isBlank()) {
@@ -88,10 +60,6 @@ public class PolicyConstraintEventMapper {
     }
 
     private String normalizeAppBlock(String newValue) {
-        if (looksLikeJson(newValue)) {
-            return normalizeCsvAppList(newValue);
-        }
-
         JsonNode rules = parseRulesJson(newValue);
         JsonNode blockedAppsNode = rules.get(PolicyRuleKeyConstants.BLOCKED_APPS);
         if (blockedAppsNode == null || !blockedAppsNode.isArray()) {
@@ -116,32 +84,15 @@ public class PolicyConstraintEventMapper {
         return result;
     }
 
-    private String normalizeCsvAppList(String value) {
-        Set<String> apps =
-                List.of(value.split(",")).stream()
-                        .map(String::trim)
-                        .filter(appId -> !appId.isBlank())
-                        .collect(Collectors.toCollection(LinkedHashSet::new));
-        if (apps.isEmpty()) {
-            throw new IllegalArgumentException("blockedApps is empty");
-        }
-        return String.join(",", apps);
-    }
-
-    private long toPositiveLong(Object value, String fieldName) {
+    private long toPositiveLong(JsonNode value, String fieldName) {
         if (value == null) {
             throw new IllegalArgumentException("Missing " + fieldName);
         }
         try {
-            long parsed;
-            if (value instanceof JsonNode node) {
-                if (!node.isNumber() && !node.isTextual()) {
-                    throw new IllegalArgumentException("Invalid number type for " + fieldName);
-                }
-                parsed = Long.parseLong(node.asText().trim());
-            } else {
-                parsed = Long.parseLong(String.valueOf(value).trim());
+            if (!value.isNumber() && !value.isTextual()) {
+                throw new IllegalArgumentException("Invalid number type for " + fieldName);
             }
+            long parsed = Long.parseLong(value.asText().trim());
             if (parsed <= 0) {
                 throw new IllegalArgumentException(fieldName + " must be positive");
             }
@@ -151,19 +102,14 @@ public class PolicyConstraintEventMapper {
         }
     }
 
-    private String toHhmm(Object value, String fieldName) {
+    private String toHhmm(JsonNode value, String fieldName) {
         if (value == null) {
             throw new IllegalArgumentException("Missing " + fieldName);
         }
-        String normalized;
-        if (value instanceof JsonNode node) {
-            if (!node.isTextual()) {
-                throw new IllegalArgumentException("Invalid HHMM type for " + fieldName);
-            }
-            normalized = node.asText().replace(":", "").trim();
-        } else {
-            normalized = String.valueOf(value).replace(":", "").trim();
+        if (!value.isTextual()) {
+            throw new IllegalArgumentException("Invalid HHMM type for " + fieldName);
         }
+        String normalized = value.asText().replace(":", "").trim();
         if (!HHMM_PATTERN.matcher(normalized).matches() || isValidHhmm(normalized)) {
             throw new IllegalArgumentException("Invalid HHMM for " + fieldName);
         }
@@ -180,14 +126,6 @@ public class PolicyConstraintEventMapper {
         } catch (JsonProcessingException e) {
             throw new IllegalArgumentException("Invalid JSON value", e);
         }
-    }
-
-    private boolean looksLikeJson(String value) {
-        if (value == null) {
-            return true;
-        }
-        String trimmed = value.trim();
-        return !trimmed.startsWith("{") || !trimmed.endsWith("}");
     }
 
     private boolean isBlank(String value) {
