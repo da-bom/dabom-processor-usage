@@ -2,7 +2,7 @@
 -- KEYS[2]: family:{fid}:remaining
 -- KEYS[3]: family:{fid}:customer:{uid}:usage:monthly
 -- KEYS[4]: family:{fid}:customer:{uid}:constraints
--- KEYS[5]: family:{fid}:alerts
+-- KEYS[5]: family:{fid}:alert:THRESHOLD (prefix)
 -- ARGV[1]: usageBytes
 -- ARGV[2]: currentHHmm (e.g. 2230)
 
@@ -38,10 +38,22 @@ if constraints['BLOCK:ACCESS'] == "1" then
     return getResult("MANUAL", currentMonthly)
 end
 
--- 2. [Block] 시간 차단 여부
-local blockStart = tonumber(constraints['BLOCK:TIME:START'])
-local blockEnd = tonumber(constraints['BLOCK:TIME:END'])
+local blockStart = nil
+local blockEnd = nil
 
+-- BLOCK:TIME = "HHMM-HHMM" 해당 포멧을 기준으로 파싱
+local blockTimeRange = constraints['BLOCK:TIME']
+if blockTimeRange then
+    local dashPos = string.find(blockTimeRange, "-", 1, true)
+    if dashPos then
+        local startStr = string.sub(blockTimeRange, 1, dashPos - 1)
+        local endStr = string.sub(blockTimeRange, dashPos + 1)
+        blockStart = tonumber(startStr)
+        blockEnd = tonumber(endStr)
+    end
+end
+
+-- 2. [Block] 시간 차단 여부
 if blockStart and blockEnd then
     if blockStart < blockEnd then
         -- same-day window, e.g. 0900~1800
@@ -111,16 +123,16 @@ else
 
     -- 경고 상태이면 중복 체크
     if alertLevel then
-        local alertKey = "THRESHOLD:" .. alertLevel
+        local alertKey = KEYS[5] .. ":" .. alertLevel
         -- 이미 알림을 보냈는지 확인
-        local isSent = redis.call('HEXISTS', KEYS[5], alertKey)
+        local isSent = redis.call('EXISTS', alertKey)
 
         if isSent == 1 then
             -- 이미 보낸 레벨이면 상태를 NORMAL로 덮어씀
             status = "NORMAL"
         else
             -- 아직 안보냈으면 알림 상태 기록 (PUBLISHED)
-            redis.call('HSET', KEYS[5], alertKey, "PUBLISHED")
+            redis.call('SET', alertKey, "PUBLISHED")
         end
     end
 end
