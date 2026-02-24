@@ -25,9 +25,7 @@ public class PolicyEventValidator {
             return false;
         }
 
-        if (payload.familyId() == null
-                || payload.policyKey() == null
-                || payload.policyKey().isBlank()) {
+        if (payload.policyKey() == null || payload.policyKey().isBlank()) {
             log.warn(
                     "Invalid policy-updated payload. eventId={}, familyId={}, customerId={},"
                             + " policyKey={}",
