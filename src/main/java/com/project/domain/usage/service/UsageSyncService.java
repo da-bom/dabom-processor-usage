@@ -11,7 +11,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
 import com.project.domain.notification.infra.messaging.NotificationKafkaProducer;
-import com.project.domain.policy.service.PolicyConstraintWarmupService;
+import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
 import com.project.domain.usage.infra.messaging.UsagePersistKafkaProducer;
 import com.project.domain.usage.infra.messaging.UsageRealtimeKafkaProducer;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
@@ -44,7 +44,7 @@ public class UsageSyncService {
 
     // Redis Warmup Service
     private final UsageRedisWarmupService usageRedisWarmupService;
-    private final PolicyConstraintWarmupService policyConstraintWarmupService;
+    private final PolicyConstraintWarmupHelper policyConstraintWarmupHelper;
 
     // Producers
     private final UsagePersistKafkaProducer persistProducer;
@@ -76,7 +76,7 @@ public class UsageSyncService {
                 usageRedisWarmupService.ensureRemainingBytesCached(familyId, remainingKey);
         boolean customerMonthlyUsageRedisWarmup =
                 usageRedisWarmupService.ensureCustomerUsageCached(familyId, customerId, monthlyKey);
-        policyConstraintWarmupService.warmupIfMissing(familyId, customerId);
+        policyConstraintWarmupHelper.warmupIfMissing(familyId, customerId);
 
         if (!familyInfoRedisWarmup
                 || !familyRemainingRedisWarmup

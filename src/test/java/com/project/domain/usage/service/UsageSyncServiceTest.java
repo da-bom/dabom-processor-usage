@@ -22,7 +22,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
 import com.project.domain.notification.infra.messaging.NotificationKafkaProducer;
-import com.project.domain.policy.service.PolicyConstraintWarmupService;
+import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
 import com.project.domain.usage.infra.messaging.UsagePersistKafkaProducer;
 import com.project.domain.usage.infra.messaging.UsageRealtimeKafkaProducer;
 import com.project.global.event.dto.notification.CustomerBlockedPayload;
@@ -41,7 +41,7 @@ class UsageSyncServiceTest {
 
     @Mock private RedisKeyGenerator redisKeyGenerator;
     @Mock private UsageRedisWarmupService usageRedisWarmupService;
-    @Mock private PolicyConstraintWarmupService policyConstraintWarmupService;
+    @Mock private PolicyConstraintWarmupHelper policyConstraintWarmupHelper;
 
     @Mock private UsagePersistKafkaProducer persistProducer;
 

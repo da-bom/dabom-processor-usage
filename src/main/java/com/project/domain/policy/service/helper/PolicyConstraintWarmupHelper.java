@@ -1,4 +1,4 @@
-package com.project.domain.policy.service;
+package com.project.domain.policy.service.helper;
 
 import java.util.Map;
 
@@ -13,11 +13,11 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class PolicyConstraintWarmupService {
+public class PolicyConstraintWarmupHelper {
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;
     private final RedisKeyGenerator redisKeyGenerator;
-    private final PolicyAssignmentSyncService policyAssignmentSyncService;
+    private final PolicyAssignmentSyncHelper policyAssignmentSyncHelper;
 
     // Lua 실행 전에 constraints 해시가 없을 때 DB 기준으로 1회 복구하는 메서드
     public void warmupIfMissing(Long familyId, Long customerId) {
@@ -32,7 +32,7 @@ public class PolicyConstraintWarmupService {
 
         // DB assignment를 기준으로 effective constraints를 계산한다.
         Map<String, String> constraints =
-                policyAssignmentSyncService.loadEffectiveConstraints(familyId, customerId);
+                policyAssignmentSyncHelper.loadEffectiveConstraints(familyId, customerId);
         if (constraints.isEmpty()) {
             // DB에도 적용 정책이 없으면 Redis key를 만들지 않고 종료한다.
             log.info(
