@@ -52,7 +52,7 @@ end
 
 if not new_value or new_value == "" then
     redis.call("HDEL", constraints_key, policy_key)
-    redis.call("HSET", constraints_key, version_field, tostring(event_version))
+    redis.call("HDEL", constraints_key, version_field)
     return {"APPLIED", "HDEL"}
 end
 
