@@ -6,8 +6,8 @@ import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.project.domain.usage.service.UsageEventValidator;
-import com.project.domain.usage.service.UsageSyncService;
+import com.project.domain.usage.service.UsageSyncServiceImpl;
+import com.project.domain.usage.service.helper.UsageEventValidator;
 import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.usage.UsagePayload;
 
@@ -20,7 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 public class UsageEventsConsumer {
 
     private final ObjectMapper objectMapper;
-    private final UsageSyncService usageSyncService;
+    private final UsageSyncServiceImpl usageSyncServiceImpl;
     private final UsageEventValidator validator;
 
     @KafkaListener(topics = "usage-events", groupId = "dabom-processor-usage")
@@ -47,7 +47,7 @@ public class UsageEventsConsumer {
             log.debug("Consumed usage event: {} (Key: {})", eventId, consumerRecord.key());
 
             // 비즈니스 로직 위임
-            usageSyncService.syncUsage(eventId, envelope.timestamp().toString(), payload);
+            usageSyncServiceImpl.syncUsage(eventId, envelope.timestamp().toString(), payload);
         } catch (Exception e) {
             // 에러 발생 시 로그만 남기고 넘김
             log.error(

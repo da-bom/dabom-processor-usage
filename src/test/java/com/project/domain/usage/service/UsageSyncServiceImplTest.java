@@ -25,6 +25,7 @@ import com.project.domain.notification.infra.messaging.NotificationKafkaProducer
 import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
 import com.project.domain.usage.infra.messaging.UsagePersistKafkaProducer;
 import com.project.domain.usage.infra.messaging.UsageRealtimeKafkaProducer;
+import com.project.domain.usage.service.helper.UsageRedisWarmupHelper;
 import com.project.global.event.dto.notification.CustomerBlockedPayload;
 import com.project.global.event.dto.notification.ThresholdAlertPayload;
 import com.project.global.event.dto.usage.UsagePayload;
@@ -33,14 +34,14 @@ import com.project.global.event.dto.usage.UsageRealtimePayload;
 import com.project.global.util.RedisKeyGenerator;
 
 @ExtendWith(MockitoExtension.class)
-class UsageSyncServiceTest {
+class UsageSyncServiceImplTest {
 
-    @InjectMocks private UsageSyncService usageSyncService;
+    @InjectMocks private UsageSyncServiceImpl usageSyncServiceImpl;
 
     @Mock private StringRedisTemplate redisTemplate;
 
     @Mock private RedisKeyGenerator redisKeyGenerator;
-    @Mock private UsageRedisWarmupService usageRedisWarmupService;
+    @Mock private UsageRedisWarmupHelper usageRedisWarmupHelper;
     @Mock private PolicyConstraintWarmupHelper policyConstraintWarmupHelper;
 
     @Mock private UsagePersistKafkaProducer persistProducer;
@@ -69,7 +70,7 @@ class UsageSyncServiceTest {
                                 any(Object.class)))
                 .willReturn(scriptResult);
 
-        usageSyncService.syncUsage(eventId, eventTime, payload);
+        usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
 
         verify(persistProducer, times(1)).publish(any(UsagePersistPayload.class));
         verify(realtimeProducer, times(1)).publish(any(UsageRealtimePayload.class));
@@ -95,7 +96,7 @@ class UsageSyncServiceTest {
                                 any(Object.class)))
                 .willReturn(scriptResult);
 
-        usageSyncService.syncUsage(eventId, eventTime, payload);
+        usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
 
         verify(notificationProducer, times(1)).publish(any(ThresholdAlertPayload.class));
     }
@@ -119,7 +120,7 @@ class UsageSyncServiceTest {
                                 any(Object.class)))
                 .willReturn(scriptResult);
 
-        usageSyncService.syncUsage(eventId, eventTime, payload);
+        usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
 
         verify(notificationProducer, times(1)).publish(any(CustomerBlockedPayload.class));
     }
@@ -142,7 +143,7 @@ class UsageSyncServiceTest {
                                 any(Object.class)))
                 .willReturn(scriptResult);
 
-        usageSyncService.syncUsage(eventId, eventTime, payload);
+        usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
 
         verify(notificationProducer, times(1)).publish(any(CustomerBlockedPayload.class));
     }
@@ -158,14 +159,14 @@ class UsageSyncServiceTest {
                 .willReturn("constraintsKey");
         given(redisKeyGenerator.generateFamilyAlertsKey(familyId)).willReturn("alertsKey");
         given(
-                        usageRedisWarmupService.ensureFamilyInfoCached(
+                        usageRedisWarmupHelper.ensureFamilyInfoCached(
                                 familyId, "family:" + familyId + ":info"))
                 .willReturn(true);
         given(
-                        usageRedisWarmupService.ensureRemainingBytesCached(
+                        usageRedisWarmupHelper.ensureRemainingBytesCached(
                                 familyId, "family:" + familyId + ":remaining"))
                 .willReturn(true);
-        given(usageRedisWarmupService.ensureCustomerUsageCached(familyId, customerId, "monthlyKey"))
+        given(usageRedisWarmupHelper.ensureCustomerUsageCached(familyId, customerId, "monthlyKey"))
                 .willReturn(true);
     }
 }
