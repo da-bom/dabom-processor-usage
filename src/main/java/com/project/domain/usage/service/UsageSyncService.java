@@ -30,13 +30,11 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class UsageSyncService {
 
-    private static final String STATUS_BLOCKED_PREFIX = "BLOCKED";
     private static final String STATUS_WARNING_PREFIX = "WARNING";
     private static final String STATUS_NORMAL_PREFIX = "NORMAL";
     private static final ZoneId ASIA_SEOUL = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter HHMM_FORMATTER = DateTimeFormatter.ofPattern("HHmm");
 
-    private static final String PERSIST_STATUS_BLOCKED = "BLOCKED";
     private static final String PERSIST_STATUS_ALLOWED = "ALLOWED";
 
     private final StringRedisTemplate redisTemplate;

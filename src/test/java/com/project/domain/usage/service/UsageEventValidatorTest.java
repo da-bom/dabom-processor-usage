@@ -17,7 +17,7 @@ class UsageEventValidatorTest {
     @DisplayName("유효한 페이로드는 검증을 통과해야 한다")
     void validPayload() {
         // given
-        UsagePayload payload = new UsagePayload("evt_1", 100L, 1L, "com.app.test", 1024L, Map.of());
+        UsagePayload payload = new UsagePayload(100L, 1L, "com.app.test", 1024L, Map.of());
 
         // when
         boolean result = validator.isValid(payload, "evt_1");
@@ -30,7 +30,7 @@ class UsageEventValidatorTest {
     @DisplayName("필수 값이 누락되면 검증 실패해야 한다")
     void invalidPayload() {
         // given
-        UsagePayload payload = new UsagePayload("evt_1", null, null, null, null, null);
+        UsagePayload payload = new UsagePayload(null, null, null, null, null);
 
         // when
         boolean result = validator.isValid(payload, "evt_1");
@@ -45,7 +45,7 @@ class UsageEventValidatorTest {
         // given
         UsagePayload payload =
                 new UsagePayload(
-                        "evt_1", 100L, 1L, "appId", -1L, // 음수
+                        100L, 1L, "appId", -1L, // 음수
                         Map.of());
 
         // when

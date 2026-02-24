@@ -47,7 +47,7 @@ class UsageEventsConsumerTest {
 
         EventEnvelope<UsagePayload> envelope =
                 EventEnvelope.of(
-                        "USAGE", new UsagePayload("evt_1", 100L, 1L, "app", 100L, Map.of()));
+                        "USAGE", new UsagePayload(100L, 1L, "app", 100L, Map.of()));
 
         // Mocking
         given(objectMapper.readValue(eq(json), any(TypeReference.class))).willReturn(envelope);
@@ -75,7 +75,7 @@ class UsageEventsConsumerTest {
 
         EventEnvelope<UsagePayload> envelope =
                 EventEnvelope.of(
-                        "USAGE", new UsagePayload("evt_invalid", null, null, null, null, null));
+                        "USAGE", new UsagePayload( null, null, null, null, null));
 
         given(objectMapper.readValue(eq(json), any(TypeReference.class))).willReturn(envelope);
 

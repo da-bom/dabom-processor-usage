@@ -25,8 +25,6 @@ public class UsageEventsConsumer {
 
     @KafkaListener(topics = "usage-events", groupId = "dabom-processor-usage")
     public void consume(ConsumerRecord<String, String> consumerRecord) {
-        String eventId = "unknown";
-
         try {
             // JSON 역직렬화
             EventEnvelope<UsagePayload> envelope =
@@ -34,7 +32,7 @@ public class UsageEventsConsumer {
                             consumerRecord.value(),
                             new TypeReference<EventEnvelope<UsagePayload>>() {});
 
-            eventId = envelope.eventId();
+            String eventId = envelope.eventId();
             UsagePayload payload = envelope.payload();
 
             // 이벤트 검증
@@ -53,9 +51,8 @@ public class UsageEventsConsumer {
         } catch (Exception e) {
             // 에러 발생 시 로그만 남기고 넘김
             log.error(
-                    "Failed to process usage event [Key: {}, EventId: {}]: {}",
+                    "Failed to process usage event [Key: {}]: {}",
                     consumerRecord.key(),
-                    eventId,
                     e.getMessage(),
                     e);
         }

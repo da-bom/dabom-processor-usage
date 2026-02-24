@@ -56,7 +56,7 @@ class UsageSyncServiceTest {
     void syncUsage_Normal() {
         String eventId = "evt_1";
         String eventTime = LocalDateTime.now().toString();
-        UsagePayload payload = new UsagePayload(eventId, 100L, 1L, "appId", 1024L, Map.of());
+        UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
 
         stubCommon(100L, 1L);
 
@@ -82,7 +82,7 @@ class UsageSyncServiceTest {
     void syncUsage_Warning() {
         String eventId = "evt_2";
         String eventTime = LocalDateTime.now().toString();
-        UsagePayload payload = new UsagePayload(eventId, 100L, 1L, "appId", 1024L, Map.of());
+        UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
 
         stubCommon(100L, 1L);
 
@@ -105,7 +105,7 @@ class UsageSyncServiceTest {
     void syncUsage_Blocked() {
         String eventId = "evt_3";
         String eventTime = LocalDateTime.now().toString();
-        UsagePayload payload = new UsagePayload(eventId, 100L, 1L, "appId", 1024L, Map.of());
+        UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
 
         stubCommon(100L, 1L);
 
@@ -129,7 +129,7 @@ class UsageSyncServiceTest {
     void syncUsage_BlockedTime() {
         String eventId = "evt_4";
         String eventTime = "2026-02-20T23:30:00";
-        UsagePayload payload = new UsagePayload(eventId, 100L, 1L, "appId", 1024L, Map.of());
+        UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
 
         stubCommon(100L, 1L);
 
