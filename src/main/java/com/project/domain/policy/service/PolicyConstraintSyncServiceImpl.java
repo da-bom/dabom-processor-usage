@@ -80,7 +80,8 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
         } else {
             try {
                 // JSON 형태의 newValue 정규화
-                normalizedNewValue = policyConstraintEventMapper.normalizeValue(policyKey, newValue);
+                normalizedNewValue =
+                        policyConstraintEventMapper.normalizeValue(policyKey, newValue);
             } catch (IllegalArgumentException e) {
                 log.warn(
                         "Invalid policy value. eventId={}, familyId={}, customerId={}, field={},"
