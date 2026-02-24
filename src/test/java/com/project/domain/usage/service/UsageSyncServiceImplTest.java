@@ -1,7 +1,7 @@
 package com.project.domain.usage.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -9,28 +9,22 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.RedisScript;
 
-import com.project.domain.notification.infra.messaging.NotificationKafkaProducer;
 import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
-import com.project.domain.usage.infra.messaging.UsagePersistKafkaProducer;
-import com.project.domain.usage.infra.messaging.UsageRealtimeKafkaProducer;
+import com.project.domain.usage.service.dto.UsageUpdateResult;
+import com.project.domain.usage.service.helper.UsageEventPublisher;
+import com.project.domain.usage.service.helper.UsageLuaExecutor;
 import com.project.domain.usage.service.helper.UsageRedisWarmupHelper;
-import com.project.global.event.dto.notification.CustomerBlockedPayload;
-import com.project.global.event.dto.notification.ThresholdAlertPayload;
 import com.project.global.event.dto.usage.UsagePayload;
-import com.project.global.event.dto.usage.UsagePersistPayload;
-import com.project.global.event.dto.usage.UsageRealtimePayload;
 import com.project.global.util.RedisKeyGenerator;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,114 +32,63 @@ class UsageSyncServiceImplTest {
 
     @InjectMocks private UsageSyncServiceImpl usageSyncServiceImpl;
 
-    @Mock private StringRedisTemplate redisTemplate;
-
     @Mock private RedisKeyGenerator redisKeyGenerator;
     @Mock private UsageRedisWarmupHelper usageRedisWarmupHelper;
     @Mock private PolicyConstraintWarmupHelper policyConstraintWarmupHelper;
-
-    @Mock private UsagePersistKafkaProducer persistProducer;
-
-    @Mock private UsageRealtimeKafkaProducer realtimeProducer;
-
-    @Mock private NotificationKafkaProducer notificationProducer;
-
-    @Mock private RedisScript<List<Object>> usageUpdateScript;
+    @Mock private UsageLuaExecutor usageLuaExecutor;
+    @Mock private UsageEventPublisher usageEventPublisher;
 
     @Test
-    @DisplayName("정상 상태에서는 Persist와 Realtime 이벤트만 발행된다")
-    void syncUsage_Normal() {
+    @DisplayName("정상 흐름이면 Lua 실행 후 이벤트 발행기로 위임한다")
+    void syncUsage_SuccessFlow() {
         String eventId = "evt_1";
         String eventTime = LocalDateTime.now().toString();
         UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
 
         stubCommon(100L, 1L);
 
-        List<Object> scriptResult = List.of(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L);
-        given(
-                        redisTemplate.execute(
-                                eq(usageUpdateScript),
-                                anyList(),
-                                any(Object.class),
-                                any(Object.class)))
-                .willReturn(scriptResult);
+        UsageUpdateResult luaResult = new UsageUpdateResult(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L);
+        given(usageLuaExecutor.execute(any(UsageLuaExecutor.UsageLuaCommand.class), eq(eventId)))
+                .willReturn(luaResult);
 
         usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
 
-        verify(persistProducer, times(1)).publish(any(UsagePersistPayload.class));
-        verify(realtimeProducer, times(1)).publish(any(UsageRealtimePayload.class));
-        verify(notificationProducer, never()).publish(any(ThresholdAlertPayload.class));
-        verify(notificationProducer, never()).publish(any(CustomerBlockedPayload.class));
+        ArgumentCaptor<UsageLuaExecutor.UsageLuaCommand> commandCaptor =
+                ArgumentCaptor.forClass(UsageLuaExecutor.UsageLuaCommand.class);
+        verify(usageLuaExecutor, times(1)).execute(commandCaptor.capture(), eq(eventId));
+
+        UsageLuaExecutor.UsageLuaCommand command = commandCaptor.getValue();
+        assertEquals("family:100:info", command.infoKey());
+        assertEquals("family:100:remaining", command.remainingKey());
+        assertEquals("monthlyKey", command.monthlyKey());
+        assertEquals("constraintsKey", command.constraintsKey());
+        assertEquals("alertsKey", command.alertsKey());
+        assertEquals(1024L, command.usageBytes());
+        assertEquals(4, command.currentHhmm().length());
+
+        verify(usageEventPublisher, times(1)).publish(any(UsageEventPublisher.UsageEventContext.class));
     }
 
     @Test
-    @DisplayName("WARNING 상태에서는 ThresholdAlertPayload가 발행된다")
-    void syncUsage_Warning() {
+    @DisplayName("Warmup 실패 시 Lua 실행과 이벤트 발행을 하지 않는다")
+    void syncUsage_WarmupFailed() {
         String eventId = "evt_2";
-        String eventTime = LocalDateTime.now().toString();
         UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
 
-        stubCommon(100L, 1L);
+        given(redisKeyGenerator.generateFamilyInfoKey(100L)).willReturn("family:100:info");
+        given(redisKeyGenerator.generateFamilyRemainingKey(100L)).willReturn("family:100:remaining");
+        given(redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(100L, 1L)).willReturn("monthlyKey");
+        given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L)).willReturn("constraintsKey");
+        given(redisKeyGenerator.generateFamilyAlertsKey(100L)).willReturn("alertsKey");
 
-        List<Object> scriptResult = List.of(9000L, 1000L, "WARNING_10", 2000L, 0.2, 10000L);
-        given(
-                        redisTemplate.execute(
-                                eq(usageUpdateScript),
-                                anyList(),
-                                any(Object.class),
-                                any(Object.class)))
-                .willReturn(scriptResult);
+        given(usageRedisWarmupHelper.ensureFamilyInfoCached(100L, "family:100:info")).willReturn(false);
+        given(usageRedisWarmupHelper.ensureRemainingBytesCached(100L, "family:100:remaining")).willReturn(true);
+        given(usageRedisWarmupHelper.ensureCustomerUsageCached(100L, 1L, "monthlyKey")).willReturn(true);
 
-        usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
+        usageSyncServiceImpl.syncUsage(eventId, LocalDateTime.now().toString(), payload);
 
-        verify(notificationProducer, times(1)).publish(any(ThresholdAlertPayload.class));
-    }
-
-    @Test
-    @DisplayName("BLOCKED 상태에서는 CustomerBlockedPayload가 발행된다")
-    void syncUsage_Blocked() {
-        String eventId = "evt_3";
-        String eventTime = LocalDateTime.now().toString();
-        UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
-
-        stubCommon(100L, 1L);
-
-        List<Object> scriptResult =
-                List.of(8000L, 2000L, "BLOCKED_LIMIT_MONTHLY", 10001L, 1.0, 10000L);
-        given(
-                        redisTemplate.execute(
-                                eq(usageUpdateScript),
-                                anyList(),
-                                any(Object.class),
-                                any(Object.class)))
-                .willReturn(scriptResult);
-
-        usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
-
-        verify(notificationProducer, times(1)).publish(any(CustomerBlockedPayload.class));
-    }
-
-    @Test
-    @DisplayName("시간 차단(BLOCKED_TIME) 상태에서는 CustomerBlockedPayload가 발행된다")
-    void syncUsage_BlockedTime() {
-        String eventId = "evt_4";
-        String eventTime = "2026-02-20T23:30:00";
-        UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
-
-        stubCommon(100L, 1L);
-
-        List<Object> scriptResult = List.of(8000L, 2000L, "BLOCKED_TIME", 1000L, 0.1, 10000L);
-        given(
-                        redisTemplate.execute(
-                                eq(usageUpdateScript),
-                                anyList(),
-                                any(Object.class),
-                                any(Object.class)))
-                .willReturn(scriptResult);
-
-        usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
-
-        verify(notificationProducer, times(1)).publish(any(CustomerBlockedPayload.class));
+        verify(usageLuaExecutor, never()).execute(any(), any());
+        verify(usageEventPublisher, never()).publish(any());
     }
 
     private void stubCommon(long familyId, long customerId) {
