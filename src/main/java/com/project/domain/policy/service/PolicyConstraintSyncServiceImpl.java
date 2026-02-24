@@ -1,6 +1,6 @@
 package com.project.domain.policy.service;
 
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -349,8 +349,8 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
         if (envelope.timestamp() == null) {
             return System.currentTimeMillis();
         }
-        // OffsetDateTime -> epoch millis로 변환해 Lua 버전 비교에 사용한다.
-        return envelope.timestamp().toInstant(ZoneOffset.UTC).toEpochMilli();
+        // timestamp를 KST 기준 epoch millis로 변환해 Lua 버전 비교에 사용
+        return envelope.timestamp().atZone(ZoneId.of("Asia/Seoul")).toInstant().toEpochMilli();
     }
 
     private void logResult(
