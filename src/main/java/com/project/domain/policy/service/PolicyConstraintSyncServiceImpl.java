@@ -83,6 +83,12 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             return;
         }
 
+        // familyId/targetCustomerId가 모두 없으면 전체 활성 구성원에 대해 정책을 반영
+        if (payload.familyId() == null && targetCustomerId == null) {
+            processGlobalPolicyUpdate(eventId, policyKey, eventVersion, normalizedPolicyValue);
+            return;
+        }
+
         // targetCustomerId가 있으면 해당 customer만 반영
         if (targetCustomerId != null) {
             // family-customer 소속 관계 검증
@@ -137,6 +143,43 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
                         + VALUE_LOG_SUFFIX,
                 logSanitizer.sanitize(eventId),
                 payload.familyId(),
+                appliedCount,
+                skippedCount,
+                logSanitizer.sanitize(policyKey),
+                logSanitizer.sanitize(normalizedPolicyValue.normalizedNewValue()));
+    }
+
+    private void processGlobalPolicyUpdate(
+            String eventId,
+            String policyKey,
+            long eventVersion,
+            NormalizedPolicyValue normalizedPolicyValue) {
+        List<FamilyMemberRepository.FamilyMemberTargetProjection> members =
+                familyMemberRepository.findAllActiveTargets();
+        int appliedCount = 0;
+        int skippedCount = 0;
+
+        for (FamilyMemberRepository.FamilyMemberTargetProjection member : members) {
+            boolean applied =
+                    processCustomerPolicyUpdate(
+                            eventId,
+                            member.getFamilyId(),
+                            member.getCustomerId(),
+                            policyKey,
+                            eventVersion,
+                            normalizedPolicyValue);
+            if (applied) {
+                appliedCount++;
+            } else {
+                skippedCount++;
+            }
+        }
+
+        log.info(
+                "Processed global constraint. eventId={}, appliedCount={}, skippedCount={},"
+                        + " field={}"
+                        + VALUE_LOG_SUFFIX,
+                logSanitizer.sanitize(eventId),
                 appliedCount,
                 skippedCount,
                 logSanitizer.sanitize(policyKey),
