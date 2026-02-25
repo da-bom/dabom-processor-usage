@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import com.project.global.common.TimeConstants;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +17,7 @@ import com.project.domain.policy.enums.PolicyType;
 import com.project.domain.policy.infra.cache.dto.PolicyConstraintRedisHash;
 import com.project.domain.policy.repository.PolicyAssignmentRepository;
 import com.project.domain.policy.repository.PolicyRepository;
+import com.project.global.common.TimeConstants;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -184,10 +184,18 @@ public class PolicyAssignmentSyncHelper {
     // assignment의 시간 정보를 epoch millis 버전으로 변환
     private long resolveAssignmentVersion(PolicyAssignment assignment) {
         if (assignment.getUpdatedAt() != null) {
-            return assignment.getUpdatedAt().atZone(TimeConstants.ASIA_SEOUL).toInstant().toEpochMilli();
+            return assignment
+                    .getUpdatedAt()
+                    .atZone(TimeConstants.ASIA_SEOUL)
+                    .toInstant()
+                    .toEpochMilli();
         }
         if (assignment.getCreatedAt() != null) {
-            return assignment.getCreatedAt().atZone(TimeConstants.ASIA_SEOUL).toInstant().toEpochMilli();
+            return assignment
+                    .getCreatedAt()
+                    .atZone(TimeConstants.ASIA_SEOUL)
+                    .toInstant()
+                    .toEpochMilli();
         }
         return System.currentTimeMillis();
     }

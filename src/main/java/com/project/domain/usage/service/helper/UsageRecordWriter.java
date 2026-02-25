@@ -4,12 +4,12 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 
-import com.project.global.common.TimeConstants;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import com.project.domain.usage.entity.UsageRecord;
 import com.project.domain.usage.repository.UsageRecordRepository;
+import com.project.global.common.TimeConstants;
 import com.project.global.event.dto.usage.UsagePersistPayload;
 import com.project.global.util.LogSanitizer;
 
@@ -57,7 +57,9 @@ public class UsageRecordWriter {
             return LocalDateTime.now(TimeConstants.ASIA_SEOUL);
         }
         try {
-            return OffsetDateTime.parse(eventTime).atZoneSameInstant(TimeConstants.ASIA_SEOUL).toLocalDateTime();
+            return OffsetDateTime.parse(eventTime)
+                    .atZoneSameInstant(TimeConstants.ASIA_SEOUL)
+                    .toLocalDateTime();
         } catch (DateTimeParseException e) {
             log.warn(
                     "Invalid eventTime format. Fallback to now(KST). eventTime={}",
