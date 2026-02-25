@@ -1,10 +1,8 @@
 package com.project.domain.usage.service.helper;
 
+import com.project.domain.usage.infra.messaging.*;
 import org.springframework.stereotype.Component;
 
-import com.project.domain.notification.infra.messaging.NotificationKafkaProducer;
-import com.project.domain.usage.infra.messaging.UsagePersistKafkaProducer;
-import com.project.domain.usage.infra.messaging.UsageRealtimeKafkaProducer;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
 import com.project.global.event.dto.notification.CustomerBlockedPayload;
 import com.project.global.event.dto.notification.ThresholdAlertPayload;
@@ -23,9 +21,9 @@ public class UsageEventPublisher {
     private static final String PERSIST_STATUS_ALLOWED = "ALLOWED";
 
     // Producers
-    private final UsagePersistKafkaProducer persistProducer;
-    private final UsageRealtimeKafkaProducer realtimeProducer;
-    private final NotificationKafkaProducer notificationProducer;
+    private final UsagePersistEventPublisher usagePersistEventPublisher;
+    private final UsageRealtimeEventPublisher usageRealtimeEventPublisher;
+    private final NotificationEventPublisher notificationEventPublisher;
 
     public void publish(UsageEventContext ctx) {
 
@@ -46,7 +44,7 @@ public class UsageEventPublisher {
         double usedPercent = totalLimit > 0 ? (double) totalUsed / totalLimit * 100.0 : 0.0;
 
         // DB 저장 이벤트 (Persist)
-        persistProducer.publish(
+        usagePersistEventPublisher.publish(
                 new UsagePersistPayload(
                         ctx.eventId(),
                         familyId,
@@ -61,7 +59,7 @@ public class UsageEventPublisher {
                         ctx.eventTime()));
 
         // 실시간 사용량 이벤트 (Realtime)
-        realtimeProducer.publish(
+        usageRealtimeEventPublisher.publish(
                 new UsageRealtimePayload(
                         familyId,
                         customerId,
@@ -76,13 +74,13 @@ public class UsageEventPublisher {
         // 알림 이벤트 (Notification)
         if (status.startsWith(STATUS_WARNING_PREFIX)) {
             int percent = parsePercent(status);
-            notificationProducer.publish(
+            notificationEventPublisher.publish(
                     new ThresholdAlertPayload(
                             familyId, percent, "가족 데이터가 " + percent + "% 미만입니다!"));
 
         } else if (!status.startsWith(STATUS_NORMAL_PREFIX)) {
             // reason: TIME_BLOCK, MONTHLY_LIMIT_EXCEEDED, FAMILY_QUOTA_EXCEEDED
-            notificationProducer.publish(
+            notificationEventPublisher.publish(
                     new CustomerBlockedPayload(familyId, customerId, status, ctx.eventTime()));
         }
     }
