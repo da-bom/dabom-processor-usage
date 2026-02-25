@@ -1,5 +1,6 @@
 package com.project.domain.policy.service.helper;
 
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +26,8 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class PolicyAssignmentSyncHelper {
+    private static final ZoneId ASIA_SEOUL = ZoneId.of("Asia/Seoul");
+
     private final PolicyAssignmentRepository policyAssignmentRepository;
     private final PolicyRepository policyRepository;
     private final ObjectMapper objectMapper;
@@ -182,18 +185,10 @@ public class PolicyAssignmentSyncHelper {
     // assignment의 시간 정보를 epoch millis 버전으로 변환
     private long resolveAssignmentVersion(PolicyAssignment assignment) {
         if (assignment.getUpdatedAt() != null) {
-            return assignment
-                    .getUpdatedAt()
-                    .atZone(java.time.ZoneOffset.UTC)
-                    .toInstant()
-                    .toEpochMilli();
+            return assignment.getUpdatedAt().atZone(ASIA_SEOUL).toInstant().toEpochMilli();
         }
         if (assignment.getCreatedAt() != null) {
-            return assignment
-                    .getCreatedAt()
-                    .atZone(java.time.ZoneOffset.UTC)
-                    .toInstant()
-                    .toEpochMilli();
+            return assignment.getCreatedAt().atZone(ASIA_SEOUL).toInstant().toEpochMilli();
         }
         return System.currentTimeMillis();
     }
