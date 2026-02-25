@@ -6,10 +6,11 @@ import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.project.domain.usage.service.UsageEventValidator;
 import com.project.domain.usage.service.UsageSyncService;
+import com.project.domain.usage.service.helper.UsageEventValidator;
 import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.usage.UsagePayload;
+import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,10 +24,10 @@ public class UsageEventsConsumer {
     private final UsageSyncService usageSyncService;
     private final UsageEventValidator validator;
 
-    @KafkaListener(topics = "usage-events", groupId = "dabom-processor-usage")
-    public void consume(ConsumerRecord<String, String> consumerRecord) {
-        String eventId = "unknown";
+    private final LogSanitizer logSanitizer;
 
+    @KafkaListener(topics = "usage-events", groupId = "dabom-processor-usage-main-group")
+    public void consume(ConsumerRecord<String, String> consumerRecord) {
         try {
             // JSON 역직렬화
             EventEnvelope<UsagePayload> envelope =
@@ -34,29 +35,31 @@ public class UsageEventsConsumer {
                             consumerRecord.value(),
                             new TypeReference<EventEnvelope<UsagePayload>>() {});
 
-            eventId = envelope.eventId();
+            String eventId = envelope.eventId();
             UsagePayload payload = envelope.payload();
 
             // 이벤트 검증
             if (!validator.isValid(payload, eventId)) {
                 log.warn(
                         "Skipping invalid usage event. Key: {}, EventId: {}",
-                        consumerRecord.key(),
-                        eventId);
+                        logSanitizer.sanitize(consumerRecord.key()),
+                        logSanitizer.sanitize(eventId));
                 return;
             }
 
-            log.debug("Consumed usage event: {} (Key: {})", eventId, consumerRecord.key());
+            log.debug(
+                    "Consumed usage event: {} (Key: {})",
+                    logSanitizer.sanitize(eventId),
+                    logSanitizer.sanitize(consumerRecord.key()));
 
             // 비즈니스 로직 위임
             usageSyncService.syncUsage(eventId, envelope.timestamp().toString(), payload);
         } catch (Exception e) {
             // 에러 발생 시 로그만 남기고 넘김
             log.error(
-                    "Failed to process usage event [Key: {}, EventId: {}]: {}",
-                    consumerRecord.key(),
-                    eventId,
-                    e.getMessage(),
+                    "Failed to process usage event [Key: {}]: {}",
+                    logSanitizer.sanitize(consumerRecord.key()),
+                    logSanitizer.sanitize(e.getMessage()),
                     e);
         }
     }

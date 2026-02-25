@@ -1,9 +1,8 @@
-package com.project.domain.notification.infra.messaging;
+package com.project.domain.usage.infra.messaging;
 
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
-import com.project.domain.notification.service.port.NotificationEventPublisher;
 import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.notification.CustomerBlockedPayload;
 import com.project.global.event.dto.notification.NotificationPayload;

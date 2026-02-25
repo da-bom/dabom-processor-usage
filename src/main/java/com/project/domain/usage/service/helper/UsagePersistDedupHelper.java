@@ -1,4 +1,4 @@
-package com.project.domain.usage.service;
+package com.project.domain.usage.service.helper;
 
 import java.time.Duration;
 
@@ -16,7 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class UsagePersistDedupService {
+public class UsagePersistDedupHelper {
     private static final String DEDUP_FLAG = "1";
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;

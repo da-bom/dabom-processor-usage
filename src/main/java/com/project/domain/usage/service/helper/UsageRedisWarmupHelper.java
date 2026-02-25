@@ -1,4 +1,4 @@
-package com.project.domain.usage.service;
+package com.project.domain.usage.service.helper;
 
 import java.time.LocalDate;
 import java.util.Map;
@@ -20,7 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class UsageRedisWarmupService {
+public class UsageRedisWarmupHelper {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final FamilyRepository familyRepository;

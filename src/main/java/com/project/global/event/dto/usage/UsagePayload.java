@@ -3,7 +3,6 @@ package com.project.global.event.dto.usage;
 import java.util.Map;
 
 public record UsagePayload(
-        String eventId,
         Long familyId,
         Long customerId,
         String appId,
