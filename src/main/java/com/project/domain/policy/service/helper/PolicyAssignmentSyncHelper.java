@@ -1,11 +1,11 @@
 package com.project.domain.policy.service.helper;
 
-import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.project.global.common.TimeConstants;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +26,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class PolicyAssignmentSyncHelper {
-    private static final ZoneId ASIA_SEOUL = ZoneId.of("Asia/Seoul");
 
     private final PolicyAssignmentRepository policyAssignmentRepository;
     private final PolicyRepository policyRepository;
@@ -185,10 +184,10 @@ public class PolicyAssignmentSyncHelper {
     // assignment의 시간 정보를 epoch millis 버전으로 변환
     private long resolveAssignmentVersion(PolicyAssignment assignment) {
         if (assignment.getUpdatedAt() != null) {
-            return assignment.getUpdatedAt().atZone(ASIA_SEOUL).toInstant().toEpochMilli();
+            return assignment.getUpdatedAt().atZone(TimeConstants.ASIA_SEOUL).toInstant().toEpochMilli();
         }
         if (assignment.getCreatedAt() != null) {
-            return assignment.getCreatedAt().atZone(ASIA_SEOUL).toInstant().toEpochMilli();
+            return assignment.getCreatedAt().atZone(TimeConstants.ASIA_SEOUL).toInstant().toEpochMilli();
         }
         return System.currentTimeMillis();
     }

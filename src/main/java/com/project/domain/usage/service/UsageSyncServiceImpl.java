@@ -1,10 +1,10 @@
 package com.project.domain.usage.service;
 
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 
+import com.project.global.common.TimeConstants;
 import org.springframework.stereotype.Service;
 
 import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
@@ -24,7 +24,6 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class UsageSyncServiceImpl implements UsageSyncService {
 
-    private static final ZoneId ASIA_SEOUL = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter HHMM_FORMATTER = DateTimeFormatter.ofPattern("HHmm");
 
     private final RedisKeyGenerator redisKeyGenerator;
@@ -109,6 +108,6 @@ public class UsageSyncServiceImpl implements UsageSyncService {
             }
         }
         // eventTime이 없거나 파싱 실패 시 서버 현재 시각으로 보정한다.
-        return LocalDateTime.now(ASIA_SEOUL).format(HHMM_FORMATTER);
+        return LocalDateTime.now(TimeConstants.ASIA_SEOUL).format(HHMM_FORMATTER);
     }
 }

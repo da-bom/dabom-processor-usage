@@ -1,12 +1,12 @@
 package com.project.domain.policy.service;
 
-import java.time.ZoneId;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
+import com.project.global.common.TimeConstants;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -33,7 +33,6 @@ import lombok.extern.slf4j.Slf4j;
 public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncService {
     private static final String VALUE_LOG_SUFFIX = ", value={}";
     private static final String LUA_RESULT_APPLIED = "APPLIED";
-    private static final ZoneId ASIA_SEOUL = ZoneId.of("Asia/Seoul");
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;
     private final RedisScript<List<String>> policyConstraintUpdateScript;
@@ -411,7 +410,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             return System.currentTimeMillis();
         }
         // timestamp를 KST 기준 epoch millis로 변환해 Lua 버전 비교에 사용
-        return envelope.timestamp().atZone(ASIA_SEOUL).toInstant().toEpochMilli();
+        return envelope.timestamp().atZone(TimeConstants.ASIA_SEOUL).toInstant().toEpochMilli();
     }
 
     private void logResult(
