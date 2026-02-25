@@ -3,7 +3,9 @@ package com.project.domain.usage.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -11,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import java.time.LocalDateTime;
 import java.util.Map;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,6 +28,7 @@ import com.project.domain.usage.service.helper.UsageEventPublisher;
 import com.project.domain.usage.service.helper.UsageLuaExecutor;
 import com.project.domain.usage.service.helper.UsageRedisWarmupHelper;
 import com.project.global.event.dto.usage.UsagePayload;
+import com.project.global.util.LogSanitizer;
 import com.project.global.util.RedisKeyGenerator;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,6 +41,18 @@ class UsageSyncServiceImplTest {
     @Mock private PolicyConstraintWarmupHelper policyConstraintWarmupHelper;
     @Mock private UsageLuaExecutor usageLuaExecutor;
     @Mock private UsageEventPublisher usageEventPublisher;
+    @Mock private LogSanitizer logSanitizer;
+
+    @BeforeEach
+    void setUp() {
+        lenient()
+                .when(logSanitizer.sanitize(nullable(String.class)))
+                .thenAnswer(
+                        invocation -> {
+                            String raw = invocation.getArgument(0);
+                            return raw == null ? "null" : raw;
+                        });
+    }
 
     @Test
     @DisplayName("정상 흐름이면 Lua 실행 후 이벤트 발행기로 위임한다")

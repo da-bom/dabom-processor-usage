@@ -5,10 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 
 import java.util.List;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,6 +22,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
 import com.project.domain.usage.service.dto.UsageUpdateResult;
+import com.project.global.util.LogSanitizer;
 
 @ExtendWith(MockitoExtension.class)
 class UsageLuaExecutorTest {
@@ -27,6 +31,18 @@ class UsageLuaExecutorTest {
 
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private RedisScript<List<Object>> usageUpdateScript;
+    @Mock private LogSanitizer logSanitizer;
+
+    @BeforeEach
+    void setUp() {
+        lenient()
+                .when(logSanitizer.sanitize(nullable(String.class)))
+                .thenAnswer(
+                        invocation -> {
+                            String raw = invocation.getArgument(0);
+                            return raw == null ? "null" : raw;
+                        });
+    }
 
     @Test
     @DisplayName("Lua 결과를 UsageUpdateResult로 파싱한다")
