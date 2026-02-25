@@ -2,7 +2,6 @@ package com.project.domain.usage.service;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 
 import org.springframework.stereotype.Service;
@@ -13,6 +12,7 @@ import com.project.domain.usage.service.helper.CustomerQuotaWriter;
 import com.project.domain.usage.service.helper.UsagePersistDedupHelper;
 import com.project.domain.usage.service.helper.UsagePersistEventValidator;
 import com.project.domain.usage.service.helper.UsageRecordWriter;
+import com.project.global.common.TimeConstants;
 import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.usage.UsagePersistPayload;
 import com.project.global.util.LogSanitizer;
@@ -24,8 +24,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class UsagePersistServiceImpl implements UsagePersistService {
-    private static final String ASIA_SEOUL_TIME_ZONE = "Asia/Seoul";
-    private static final ZoneId KST = ZoneId.of(ASIA_SEOUL_TIME_ZONE);
     private static final long ALLOWED_PAST_MONTHS = 1;
     private static final long ALLOWED_FUTURE_MONTHS = 0;
 
@@ -77,14 +75,14 @@ public class UsagePersistServiceImpl implements UsagePersistService {
     }
 
     private LocalDate resolveCurrentMonth(String eventTime) {
-        LocalDate currentMonth = LocalDate.now(KST).withDayOfMonth(1);
+        LocalDate currentMonth = LocalDate.now(TimeConstants.ASIA_SEOUL).withDayOfMonth(1);
         if (eventTime == null || eventTime.isBlank()) {
             return currentMonth;
         }
         try {
             LocalDate parsedMonth =
                     OffsetDateTime.parse(eventTime)
-                            .atZoneSameInstant(KST)
+                            .atZoneSameInstant(TimeConstants.ASIA_SEOUL)
                             .toLocalDate()
                             .withDayOfMonth(1);
             if (isOutsideAllowedMonthWindow(parsedMonth, currentMonth)) {

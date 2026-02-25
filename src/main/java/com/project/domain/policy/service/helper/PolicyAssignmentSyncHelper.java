@@ -17,6 +17,7 @@ import com.project.domain.policy.enums.PolicyType;
 import com.project.domain.policy.infra.cache.dto.PolicyConstraintRedisHash;
 import com.project.domain.policy.repository.PolicyAssignmentRepository;
 import com.project.domain.policy.repository.PolicyRepository;
+import com.project.global.common.TimeConstants;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class PolicyAssignmentSyncHelper {
+
     private final PolicyAssignmentRepository policyAssignmentRepository;
     private final PolicyRepository policyRepository;
     private final ObjectMapper objectMapper;
@@ -184,14 +186,14 @@ public class PolicyAssignmentSyncHelper {
         if (assignment.getUpdatedAt() != null) {
             return assignment
                     .getUpdatedAt()
-                    .atZone(java.time.ZoneOffset.UTC)
+                    .atZone(TimeConstants.ASIA_SEOUL)
                     .toInstant()
                     .toEpochMilli();
         }
         if (assignment.getCreatedAt() != null) {
             return assignment
                     .getCreatedAt()
-                    .atZone(java.time.ZoneOffset.UTC)
+                    .atZone(TimeConstants.ASIA_SEOUL)
                     .toInstant()
                     .toEpochMilli();
         }

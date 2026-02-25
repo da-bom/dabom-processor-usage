@@ -2,7 +2,6 @@ package com.project.domain.usage.service.helper;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 
 import org.springframework.dao.DataIntegrityViolationException;
@@ -10,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import com.project.domain.usage.entity.UsageRecord;
 import com.project.domain.usage.repository.UsageRecordRepository;
+import com.project.global.common.TimeConstants;
 import com.project.global.event.dto.usage.UsagePersistPayload;
 import com.project.global.util.LogSanitizer;
 
@@ -20,8 +20,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class UsageRecordWriter {
-    private static final String ASIA_SEOUL_TIME_ZONE = "Asia/Seoul";
-    private static final ZoneId KST = ZoneId.of(ASIA_SEOUL_TIME_ZONE);
 
     private final UsageRecordRepository usageRecordRepository;
     private final LogSanitizer logSanitizer;
@@ -56,15 +54,17 @@ public class UsageRecordWriter {
     private LocalDateTime resolveEventTime(String eventTime) {
         // event_time이 없거나 파싱 실패면 현재 KST 시각을 사용한다.
         if (eventTime == null || eventTime.isBlank()) {
-            return LocalDateTime.now(KST);
+            return LocalDateTime.now(TimeConstants.ASIA_SEOUL);
         }
         try {
-            return OffsetDateTime.parse(eventTime).atZoneSameInstant(KST).toLocalDateTime();
+            return OffsetDateTime.parse(eventTime)
+                    .atZoneSameInstant(TimeConstants.ASIA_SEOUL)
+                    .toLocalDateTime();
         } catch (DateTimeParseException e) {
             log.warn(
                     "Invalid eventTime format. Fallback to now(KST). eventTime={}",
                     logSanitizer.sanitize(eventTime));
-            return LocalDateTime.now(KST);
+            return LocalDateTime.now(TimeConstants.ASIA_SEOUL);
         }
     }
 }
