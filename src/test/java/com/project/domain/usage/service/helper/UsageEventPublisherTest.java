@@ -16,9 +16,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.project.domain.notification.infra.messaging.NotificationKafkaProducer;
-import com.project.domain.usage.infra.messaging.UsagePersistKafkaProducer;
-import com.project.domain.usage.infra.messaging.UsageRealtimeKafkaProducer;
+import com.project.domain.usage.infra.messaging.NotificationEventPublisher;
+import com.project.domain.usage.infra.messaging.UsagePersistEventPublisher;
+import com.project.domain.usage.infra.messaging.UsageRealtimeEventPublisher;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
 import com.project.global.event.dto.notification.CustomerBlockedPayload;
 import com.project.global.event.dto.notification.ThresholdAlertPayload;
@@ -30,9 +30,9 @@ class UsageEventPublisherTest {
 
     @InjectMocks private UsageEventPublisher usageEventPublisher;
 
-    @Mock private UsagePersistKafkaProducer persistProducer;
-    @Mock private UsageRealtimeKafkaProducer realtimeProducer;
-    @Mock private NotificationKafkaProducer notificationProducer;
+    @Mock private UsagePersistEventPublisher persistProducer;
+    @Mock private UsageRealtimeEventPublisher realtimeProducer;
+    @Mock private NotificationEventPublisher notificationProducer;
 
     @Test
     @DisplayName("NORMAL 상태면 persist는 ALLOWED로 발행하고 차단/임계 알림은 발행하지 않는다")
