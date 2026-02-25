@@ -13,6 +13,7 @@ import com.project.domain.usage.service.helper.UsageEventPublisher;
 import com.project.domain.usage.service.helper.UsageLuaExecutor;
 import com.project.domain.usage.service.helper.UsageRedisWarmupHelper;
 import com.project.global.event.dto.usage.UsagePayload;
+import com.project.global.util.LogSanitizer;
 import com.project.global.util.RedisKeyGenerator;
 
 import lombok.RequiredArgsConstructor;
@@ -34,8 +35,12 @@ public class UsageSyncServiceImpl implements UsageSyncService {
 
     // Lua Script 실행기
     private final UsageLuaExecutor usageLuaExecutor;
+
     // 이벤트 발행기
     private final UsageEventPublisher usageEventPublisher;
+
+    // 로그 정리기
+    private final LogSanitizer logSanitizer;
 
     @Override
     public void syncUsage(String eventId, String eventTime, UsagePayload payload) {
@@ -65,7 +70,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
         if (!familyInfoRedisWarmup
                 || !familyRemainingRedisWarmup
                 || !customerMonthlyUsageRedisWarmup) {
-            log.error("Redis Warmup is Failed. eventId={}", eventId);
+            log.error("Redis Warmup is Failed. eventId={}", logSanitizer.sanitize(eventId));
             return;
         }
 
@@ -100,7 +105,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
             try {
                 return LocalDateTime.parse(eventTime).format(HHMM_FORMATTER);
             } catch (DateTimeParseException ignored) {
-                log.debug("Failed to parse eventTime");
+                log.debug("Failed to parse eventTime: {}", logSanitizer.sanitize(eventTime));
             }
         }
         // eventTime이 없거나 파싱 실패 시 서버 현재 시각으로 보정한다.

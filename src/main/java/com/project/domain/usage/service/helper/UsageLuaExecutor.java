@@ -7,6 +7,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
 import com.project.domain.usage.service.dto.UsageUpdateResult;
+import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,8 @@ public class UsageLuaExecutor {
 
     private final StringRedisTemplate redisTemplate;
     private final RedisScript<List<Object>> usageUpdateScript;
+
+    private final LogSanitizer logSanitizer;
 
     // Usage Lua 스크립트를 실행하고 결과를 도메인 DTO로 변환한다.
     public UsageUpdateResult execute(UsageLuaCommand command, String eventId) {
@@ -46,7 +49,7 @@ public class UsageLuaExecutor {
         if (result.size() < 6) {
             log.error(
                     "Usage update script returned invalid result. eventId={}, result={}",
-                    eventId,
+                    logSanitizer.sanitize(eventId),
                     result);
             throw new IllegalStateException("Invalid Lua script result");
         }

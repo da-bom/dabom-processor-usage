@@ -3,7 +3,9 @@ package com.project.domain.usage.infra.messaging;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -11,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import java.util.Map;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,6 +28,7 @@ import com.project.domain.usage.service.UsageSyncService;
 import com.project.domain.usage.service.helper.UsageEventValidator;
 import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.usage.UsagePayload;
+import com.project.global.util.LogSanitizer;
 
 @ExtendWith(MockitoExtension.class)
 class UsageEventsConsumerTest {
@@ -36,6 +40,18 @@ class UsageEventsConsumerTest {
     @Mock private UsageSyncService usageSyncService;
 
     @Mock private UsageEventValidator validator;
+    @Mock private LogSanitizer logSanitizer;
+
+    @BeforeEach
+    void setUp() {
+        lenient()
+                .when(logSanitizer.sanitize(nullable(String.class)))
+                .thenAnswer(
+                        invocation -> {
+                            String raw = invocation.getArgument(0);
+                            return raw == null ? "null" : raw;
+                        });
+    }
 
     @Test
     @DisplayName("유효한 메시지는 검증 후 서비스를 호출해야 한다")
