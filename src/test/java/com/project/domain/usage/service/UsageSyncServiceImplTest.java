@@ -47,7 +47,8 @@ class UsageSyncServiceImplTest {
 
         stubCommon(100L, 1L);
 
-        UsageUpdateResult luaResult = new UsageUpdateResult(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L);
+        UsageUpdateResult luaResult =
+                new UsageUpdateResult(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L);
         given(usageLuaExecutor.execute(any(UsageLuaExecutor.UsageLuaCommand.class), eq(eventId)))
                 .willReturn(luaResult);
 
@@ -66,7 +67,8 @@ class UsageSyncServiceImplTest {
         assertEquals(1024L, command.usageBytes());
         assertEquals(4, command.currentHhmm().length());
 
-        verify(usageEventPublisher, times(1)).publish(any(UsageEventPublisher.UsageEventContext.class));
+        verify(usageEventPublisher, times(1))
+                .publish(any(UsageEventPublisher.UsageEventContext.class));
     }
 
     @Test
@@ -76,14 +78,20 @@ class UsageSyncServiceImplTest {
         UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
 
         given(redisKeyGenerator.generateFamilyInfoKey(100L)).willReturn("family:100:info");
-        given(redisKeyGenerator.generateFamilyRemainingKey(100L)).willReturn("family:100:remaining");
-        given(redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(100L, 1L)).willReturn("monthlyKey");
-        given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L)).willReturn("constraintsKey");
+        given(redisKeyGenerator.generateFamilyRemainingKey(100L))
+                .willReturn("family:100:remaining");
+        given(redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(100L, 1L))
+                .willReturn("monthlyKey");
+        given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L))
+                .willReturn("constraintsKey");
         given(redisKeyGenerator.generateFamilyAlertsKey(100L)).willReturn("alertsKey");
 
-        given(usageRedisWarmupHelper.ensureFamilyInfoCached(100L, "family:100:info")).willReturn(false);
-        given(usageRedisWarmupHelper.ensureRemainingBytesCached(100L, "family:100:remaining")).willReturn(true);
-        given(usageRedisWarmupHelper.ensureCustomerUsageCached(100L, 1L, "monthlyKey")).willReturn(true);
+        given(usageRedisWarmupHelper.ensureFamilyInfoCached(100L, "family:100:info"))
+                .willReturn(false);
+        given(usageRedisWarmupHelper.ensureRemainingBytesCached(100L, "family:100:remaining"))
+                .willReturn(true);
+        given(usageRedisWarmupHelper.ensureCustomerUsageCached(100L, 1L, "monthlyKey"))
+                .willReturn(true);
 
         usageSyncServiceImpl.syncUsage(eventId, LocalDateTime.now().toString(), payload);
 
