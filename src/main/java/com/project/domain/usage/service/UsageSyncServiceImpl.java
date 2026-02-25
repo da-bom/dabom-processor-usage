@@ -100,7 +100,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
             try {
                 return LocalDateTime.parse(eventTime).format(HHMM_FORMATTER);
             } catch (DateTimeParseException ignored) {
-                log.debug("Failed to parse eventTime. fallback to now. eventTime={}", eventTime);
+                log.debug("Failed to parse eventTime");
             }
         }
         // eventTime이 없거나 파싱 실패 시 서버 현재 시각으로 보정한다.
