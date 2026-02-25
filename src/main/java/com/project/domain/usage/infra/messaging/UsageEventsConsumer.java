@@ -23,7 +23,7 @@ public class UsageEventsConsumer {
     private final UsageSyncService usageSyncService;
     private final UsageEventValidator validator;
 
-    @KafkaListener(topics = "usage-events", groupId = "dabom-processor-usage")
+    @KafkaListener(topics = "usage-events", groupId = "dabom-processor-usage-main-group")
     public void consume(ConsumerRecord<String, String> consumerRecord) {
         try {
             // JSON 역직렬화
