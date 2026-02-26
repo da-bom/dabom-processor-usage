@@ -6,6 +6,7 @@ import java.time.format.DateTimeParseException;
 
 import org.springframework.stereotype.Service;
 
+import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
 import com.project.domain.usage.service.helper.UsageEventPublisher;
@@ -26,6 +27,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
 
     private static final DateTimeFormatter HHMM_FORMATTER = DateTimeFormatter.ofPattern("HHmm");
 
+    private final FamilyMemberRepository familyMemberRepository;
     private final RedisKeyGenerator redisKeyGenerator;
 
     // Redis Warmup Service
@@ -47,6 +49,17 @@ public class UsageSyncServiceImpl implements UsageSyncService {
         Long familyId = payload.familyId();
         Long customerId = payload.customerId();
         long usageBytes = payload.bytesUsed();
+
+        // family-customer 소속 관계 검증
+        if (!isValidFamilyMember(familyId, customerId)) {
+            log.warn(
+                    "Skip usage-persist due to invalid family-customer relation. eventId={},"
+                            + " familyId={}, customerId={}",
+                    logSanitizer.sanitize(eventId),
+                    familyId,
+                    customerId);
+            return;
+        }
 
         // Redis Key 생성
         String infoKey = redisKeyGenerator.generateFamilyInfoKey(familyId);
@@ -109,5 +122,10 @@ public class UsageSyncServiceImpl implements UsageSyncService {
         }
         // eventTime이 없거나 파싱 실패 시 서버 현재 시각으로 보정한다.
         return LocalDateTime.now(TimeConstants.ASIA_SEOUL).format(HHMM_FORMATTER);
+    }
+
+    private boolean isValidFamilyMember(Long familyId, Long customerId) {
+        return familyMemberRepository.existsByFamilyIdAndCustomerIdAndDeletedAtIsNull(
+                familyId, customerId);
     }
 }
