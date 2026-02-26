@@ -7,5 +7,4 @@ public record UsagePersistPayload(
         Long bytesUsed,
         String appId,
         String processResult,
-        Long remainingAfter,
         String eventTime) {}

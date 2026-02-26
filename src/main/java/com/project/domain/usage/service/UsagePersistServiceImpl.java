@@ -7,9 +7,10 @@ import java.time.format.DateTimeParseException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.usage.enums.UsagePersistProcessResult;
 import com.project.domain.usage.service.helper.CustomerQuotaWriter;
-import com.project.domain.usage.service.helper.UsagePersistDedupHelper;
+import com.project.domain.usage.service.helper.FamilyUsageWriter;
 import com.project.domain.usage.service.helper.UsagePersistEventValidator;
 import com.project.domain.usage.service.helper.UsageRecordWriter;
 import com.project.global.common.TimeConstants;
@@ -27,10 +28,11 @@ public class UsagePersistServiceImpl implements UsagePersistService {
     private static final long ALLOWED_PAST_MONTHS = 1;
     private static final long ALLOWED_FUTURE_MONTHS = 0;
 
+    private final FamilyMemberRepository familyMemberRepository;
     private final UsagePersistEventValidator usagePersistEventValidator;
-    private final UsagePersistDedupHelper usagePersistDedupHelper;
     private final UsageRecordWriter usageRecordWriter;
     private final CustomerQuotaWriter customerQuotaWriter;
+    private final FamilyUsageWriter familyUsageWriter;
     private final LogSanitizer logSanitizer;
 
     // usage-persist 처리의 전체 흐름을 조율
@@ -48,8 +50,15 @@ public class UsagePersistServiceImpl implements UsagePersistService {
         }
 
         String originEventId = payload.originEventId();
-        // 2) Redis 기반 단기 중복 차단
-        if (usagePersistDedupHelper.isDuplicated(originEventId)) {
+        // 2) family-customer 소속 관계 검증
+        if (!isValidFamilyMember(payload.familyId(), payload.customerId())) {
+            log.warn(
+                    "Skip usage-persist due to invalid family-customer relation. eventId={},"
+                            + " originEventId={}, familyId={}, customerId={}",
+                    logSanitizer.sanitize(eventId),
+                    logSanitizer.sanitize(originEventId),
+                    payload.familyId(),
+                    payload.customerId());
             return;
         }
 
@@ -70,8 +79,15 @@ public class UsagePersistServiceImpl implements UsagePersistService {
             return;
         }
 
-        // 5) 허용 이벤트의 월 누적 반영
+        // 4) 허용 이벤트의 월 누적 반영
         customerQuotaWriter.persistAllowedQuota(payload, currentMonth, eventId, originEventId);
+        familyUsageWriter.updateFamilyUsedBytes(
+                payload.familyId(), payload.bytesUsed(), eventId, originEventId);
+    }
+
+    private boolean isValidFamilyMember(Long familyId, Long customerId) {
+        return familyMemberRepository.existsByFamilyIdAndCustomerIdAndDeletedAtIsNull(
+                familyId, customerId);
     }
 
     private LocalDate resolveCurrentMonth(String eventTime) {
