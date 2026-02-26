@@ -24,7 +24,7 @@ local currentMonthly = tonumber(redis.call('GET', KEYS[3]) or '0')
 
 -- (공통 반환 함수)
 local function getResult(status, currentMonthlyUsed)
-    local totalLimit = tonumber(redis.call('HGET', KEYS[1], 'total_quota') or '0')
+    local totalLimit = tonumber(redis.call('HGET', KEYS[1], 'totalQuota') or '0')
     local currentRemaining = tonumber(redis.call('GET', KEYS[2]) or totalLimit)
     local totalUsed = totalLimit - currentRemaining
     local userRatio = 0
@@ -81,7 +81,7 @@ end
 -- 4. [Quota] 가족 잔여량 부족 여부
 local currentRemaining = tonumber(redis.call('GET', KEYS[2]))
 if currentRemaining == nil then
-    local totalLimit = tonumber(redis.call('HGET', KEYS[1], 'total_quota') or '0')
+    local totalLimit = tonumber(redis.call('HGET', KEYS[1], 'totalQuota') or '0')
     currentRemaining = totalLimit
 end
 
@@ -96,7 +96,7 @@ local newRemaining = redis.call('DECRBY', KEYS[2], usageBytes)
 local newMonthly = redis.call('INCRBY', KEYS[3], usageBytes)
 
 -- 7. [Result] 상태 결정
-local limitStr = redis.call('HGET', KEYS[1], 'total_quota')
+local limitStr = redis.call('HGET', KEYS[1], 'totalQuota')
 local totalLimit = tonumber(limitStr or '0')
 local status = "NORMAL"
 
