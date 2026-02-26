@@ -8,7 +8,6 @@ public class RedisKeyGenerator {
     private static final String KEY_SEPARATOR = ":";
     private static final String FAMILY_KEY_PREFIX = "family";
     private static final String POLICY_EVENT_DEDUP_KEY_PREFIX = "event:dedup:policy";
-    private static final String USAGE_PERSIST_EVENT_DEDUP_KEY_PREFIX = "event:dedup:usage-persist";
 
     public String generateFamilyAlertsKey(Long familyId) {
         return FAMILY_KEY_PREFIX
@@ -56,9 +55,5 @@ public class RedisKeyGenerator {
 
     public String generatePolicyEventDedupKey(String eventId, Long customerId) {
         return POLICY_EVENT_DEDUP_KEY_PREFIX + KEY_SEPARATOR + eventId + KEY_SEPARATOR + customerId;
-    }
-
-    public String generateUsagePersistEventDedupKey(String originEventId) {
-        return USAGE_PERSIST_EVENT_DEDUP_KEY_PREFIX + KEY_SEPARATOR + originEventId;
     }
 }
