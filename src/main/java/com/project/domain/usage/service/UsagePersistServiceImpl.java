@@ -9,7 +9,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.project.domain.usage.enums.UsagePersistProcessResult;
 import com.project.domain.usage.service.helper.CustomerQuotaWriter;
-import com.project.domain.usage.service.helper.UsagePersistDedupHelper;
 import com.project.domain.usage.service.helper.UsagePersistEventValidator;
 import com.project.domain.usage.service.helper.UsageRecordWriter;
 import com.project.global.common.TimeConstants;
@@ -28,7 +27,6 @@ public class UsagePersistServiceImpl implements UsagePersistService {
     private static final long ALLOWED_FUTURE_MONTHS = 0;
 
     private final UsagePersistEventValidator usagePersistEventValidator;
-    private final UsagePersistDedupHelper usagePersistDedupHelper;
     private final UsageRecordWriter usageRecordWriter;
     private final CustomerQuotaWriter customerQuotaWriter;
     private final LogSanitizer logSanitizer;
@@ -48,12 +46,7 @@ public class UsagePersistServiceImpl implements UsagePersistService {
         }
 
         String originEventId = payload.originEventId();
-        // 2) Redis 기반 단기 중복 차단
-        if (usagePersistDedupHelper.isDuplicated(originEventId)) {
-            return;
-        }
-
-        // 3) 월 기준 계산 + 처리 결과 해석
+        // 2) 월 기준 계산 + 처리 결과 해석
         LocalDate currentMonth = resolveCurrentMonth(payload.eventTime());
         UsagePersistProcessResult processResult =
                 UsagePersistProcessResult.from(payload.processResult());
@@ -70,7 +63,7 @@ public class UsagePersistServiceImpl implements UsagePersistService {
             return;
         }
 
-        // 5) 허용 이벤트의 월 누적 반영
+        // 4) 허용 이벤트의 월 누적 반영
         customerQuotaWriter.persistAllowedQuota(payload, currentMonth, eventId, originEventId);
     }
 
