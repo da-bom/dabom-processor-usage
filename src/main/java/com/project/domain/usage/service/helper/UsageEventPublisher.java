@@ -57,7 +57,6 @@ public class UsageEventPublisher {
                                         || status.equals(STATUS_NORMAL_PREFIX)
                                 ? PERSIST_STATUS_ALLOWED
                                 : status,
-                        remaining,
                         ctx.eventTime()));
 
         // 실시간 사용량 이벤트 (Realtime)
