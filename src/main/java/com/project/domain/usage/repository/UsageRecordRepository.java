@@ -15,12 +15,10 @@ public interface UsageRecordRepository extends JpaRepository<UsageRecord, Long> 
     @Query(
             value =
                     """
-                    INSERT INTO usage_record
+                    INSERT IGNORE INTO usage_record
                         (event_id, family_id, customer_id, bytes_used, app_id, event_time, created_at, updated_at)
                     VALUES
                         (:eventId, :familyId, :customerId, :bytesUsed, :appId, :eventTime, NOW(), NOW())
-                    ON DUPLICATE KEY UPDATE
-                        event_id = VALUES(event_id)
                     """,
             nativeQuery = true)
     int upsertUsageRecord(
