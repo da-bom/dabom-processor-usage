@@ -4,10 +4,8 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
-import com.project.domain.usage.entity.UsageRecord;
 import com.project.domain.usage.repository.UsageRecordRepository;
 import com.project.global.common.TimeConstants;
 import com.project.global.event.dto.usage.UsagePersistPayload;
@@ -28,27 +26,26 @@ public class UsageRecordWriter {
     // false는 유니크 충돌(이미 저장된 이벤트) 케이스다.
     public boolean persistUsageRecord(
             UsagePersistPayload payload, String eventId, String originEventId) {
-        UsageRecord usageRecord =
-                UsageRecord.builder()
-                        .eventId(originEventId)
-                        .familyId(payload.familyId())
-                        .customerId(payload.customerId())
-                        .bytesUsed(payload.bytesUsed())
-                        .appId(payload.appId())
-                        .eventTime(resolveEventTime(payload.eventTime()))
-                        .build();
-        try {
-            usageRecordRepository.saveAndFlush(usageRecord);
+        // insert 시도
+        int affectedRows =
+                usageRecordRepository.upsertUsageRecord(
+                        originEventId,
+                        payload.familyId(),
+                        payload.customerId(),
+                        payload.bytesUsed(),
+                        payload.appId(),
+                        resolveEventTime(payload.eventTime()));
+        if (affectedRows == 1) {
             return true;
-        } catch (DataIntegrityViolationException e) {
-            // event_id 유니크 충돌은 이미 처리된 이벤트로 본다.
-            log.info(
-                    "Skip duplicated usage_record insert by unique event_id. eventId={},"
-                            + " originEventId={}",
-                    logSanitizer.sanitize(eventId),
-                    logSanitizer.sanitize(originEventId));
-            return false;
         }
+
+        // 이벤트 아이디가 같은게 들어오면 이미 처리된 이벤트로 간주
+        log.info(
+                "Skip duplicated usage_record insert by unique event_id. eventId={},"
+                        + " originEventId={}",
+                logSanitizer.sanitize(eventId),
+                logSanitizer.sanitize(originEventId));
+        return false;
     }
 
     private LocalDateTime resolveEventTime(String eventTime) {
