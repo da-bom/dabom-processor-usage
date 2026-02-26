@@ -7,6 +7,7 @@ import java.time.format.DateTimeParseException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.usage.enums.UsagePersistProcessResult;
 import com.project.domain.usage.service.helper.CustomerQuotaWriter;
 import com.project.domain.usage.service.helper.UsagePersistEventValidator;
@@ -26,6 +27,7 @@ public class UsagePersistServiceImpl implements UsagePersistService {
     private static final long ALLOWED_PAST_MONTHS = 1;
     private static final long ALLOWED_FUTURE_MONTHS = 0;
 
+    private final FamilyMemberRepository familyMemberRepository;
     private final UsagePersistEventValidator usagePersistEventValidator;
     private final UsageRecordWriter usageRecordWriter;
     private final CustomerQuotaWriter customerQuotaWriter;
@@ -46,7 +48,19 @@ public class UsagePersistServiceImpl implements UsagePersistService {
         }
 
         String originEventId = payload.originEventId();
-        // 2) 월 기준 계산 + 처리 결과 해석
+        // 2) family-customer 소속 관계 검증
+        if (!isValidFamilyMember(payload.familyId(), payload.customerId())) {
+            log.warn(
+                    "Skip usage-persist due to invalid family-customer relation. eventId={},"
+                            + " originEventId={}, familyId={}, customerId={}",
+                    logSanitizer.sanitize(eventId),
+                    logSanitizer.sanitize(originEventId),
+                    payload.familyId(),
+                    payload.customerId());
+            return;
+        }
+
+        // 3) 월 기준 계산 + 처리 결과 해석
         LocalDate currentMonth = resolveCurrentMonth(payload.eventTime());
         UsagePersistProcessResult processResult =
                 UsagePersistProcessResult.from(payload.processResult());
@@ -65,6 +79,11 @@ public class UsagePersistServiceImpl implements UsagePersistService {
 
         // 4) 허용 이벤트의 월 누적 반영
         customerQuotaWriter.persistAllowedQuota(payload, currentMonth, eventId, originEventId);
+    }
+
+    private boolean isValidFamilyMember(Long familyId, Long customerId) {
+        return familyMemberRepository.existsByFamilyIdAndCustomerIdAndDeletedAtIsNull(
+                familyId, customerId);
     }
 
     private LocalDate resolveCurrentMonth(String eventTime) {
