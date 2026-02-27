@@ -1,7 +1,7 @@
 package com.project.domain.usage.service;
 
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 
 import org.springframework.stereotype.Service;
@@ -97,8 +97,8 @@ public class UsagePersistServiceImpl implements UsagePersistService {
         }
         try {
             LocalDate parsedMonth =
-                    OffsetDateTime.parse(eventTime)
-                            .atZoneSameInstant(TimeConstants.ASIA_SEOUL)
+                    LocalDateTime.parse(eventTime)
+                            .atZone(TimeConstants.ASIA_SEOUL)
                             .toLocalDate()
                             .withDayOfMonth(1);
             if (isOutsideAllowedMonthWindow(parsedMonth, currentMonth)) {

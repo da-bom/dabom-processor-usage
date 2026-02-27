@@ -1,7 +1,6 @@
 package com.project.domain.usage.service.helper;
 
 import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 
 import org.springframework.stereotype.Service;
@@ -54,8 +53,8 @@ public class UsageRecordWriter {
             return LocalDateTime.now(TimeConstants.ASIA_SEOUL);
         }
         try {
-            return OffsetDateTime.parse(eventTime)
-                    .atZoneSameInstant(TimeConstants.ASIA_SEOUL)
+            return LocalDateTime.parse(eventTime)
+                    .atZone(TimeConstants.ASIA_SEOUL)
                     .toLocalDateTime();
         } catch (DateTimeParseException e) {
             log.warn(
