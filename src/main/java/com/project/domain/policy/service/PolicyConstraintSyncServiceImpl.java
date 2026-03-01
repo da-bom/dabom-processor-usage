@@ -32,6 +32,7 @@ import lombok.extern.slf4j.Slf4j;
 public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncService {
     private static final String VALUE_LOG_SUFFIX = ", value={}";
     private static final String LUA_RESULT_APPLIED = "APPLIED";
+    private static final String SKIP_REASON_MISSING_CONSTRAINTS_KEY = "MISSING_CONSTRAINTS_KEY";
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;
     private final RedisScript<List<String>> policyConstraintUpdateScript;
@@ -234,6 +235,13 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             NormalizedPolicyValue normalizedPolicyValue) {
         // 업데이트 이벤트는 기존 캐시 갱신만 담당하고, 캐시 미스는 스킵
         if (!hasConstraintsKey(familyId, customerId)) {
+            logResult(
+                    eventId,
+                    familyId,
+                    customerId,
+                    policyKey,
+                    normalizedPolicyValue.normalizedNewValue(),
+                    SKIP_REASON_MISSING_CONSTRAINTS_KEY);
             return false;
         }
 
