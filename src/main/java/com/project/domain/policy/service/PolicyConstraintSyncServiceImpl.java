@@ -14,7 +14,6 @@ import org.springframework.stereotype.Service;
 import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.policy.constant.PolicyConstraintKeyConstants;
 import com.project.domain.policy.service.helper.PolicyConstraintEventMapper;
-import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
 import com.project.domain.policy.service.helper.PolicyEventValidator;
 import com.project.global.common.TimeConstants;
 import com.project.global.event.dto.EventEnvelope;
@@ -33,6 +32,7 @@ import lombok.extern.slf4j.Slf4j;
 public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncService {
     private static final String VALUE_LOG_SUFFIX = ", value={}";
     private static final String LUA_RESULT_APPLIED = "APPLIED";
+    private static final String SKIP_REASON_MISSING_CONSTRAINTS_KEY = "MISSING_CONSTRAINTS_KEY";
 
     private final RedisTemplate<String, String> familyStringRedisTemplate;
     private final RedisScript<List<String>> policyConstraintUpdateScript;
@@ -40,14 +40,13 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
     private final FamilyMemberRepository familyMemberRepository;
     private final PolicyEventValidator policyEventValidator;
     private final PolicyConstraintEventMapper policyConstraintEventMapper;
-    private final PolicyConstraintWarmupHelper policyConstraintWarmupHelper;
     private final LogSanitizer logSanitizer;
 
     @Value("${app.kafka.dedup.policy-ttl-seconds}")
     private long dedupTtlSeconds;
 
     // policy-updated 이벤트의 진입점:
-    // 1) payload 검증 -> 2) Redis warmup -> 3) Lua 적용
+    // 1) payload 검증 -> 2) Lua 적용
     @Override
     public void sync(EventEnvelope<PolicyUpdatedPayload> envelope, String recordKey) {
         PolicyUpdatedPayload payload = envelope.payload();
@@ -102,7 +101,7 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
                 return;
             }
 
-            // 단일 고객 정책 업데이트(워밍업 + Redis 반영)
+            // 단일 고객 정책 업데이트(Redis 반영)
             processCustomerPolicyUpdate(
                     eventId,
                     payload.familyId(),
@@ -234,8 +233,17 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
             String policyKey,
             long eventVersion,
             NormalizedPolicyValue normalizedPolicyValue) {
-        // Redis constraints 키가 없으면 DB 기반으로 초기 워밍업
-        policyConstraintWarmupHelper.warmupIfMissing(familyId, customerId);
+        // 업데이트 이벤트는 기존 캐시 갱신만 담당하고, 캐시 미스는 스킵
+        if (!hasConstraintsKey(familyId, customerId)) {
+            logResult(
+                    eventId,
+                    familyId,
+                    customerId,
+                    policyKey,
+                    normalizedPolicyValue.normalizedNewValue(),
+                    SKIP_REASON_MISSING_CONSTRAINTS_KEY);
+            return false;
+        }
 
         if (PolicyConstraintKeyConstants.BLOCK_APP.equals(policyKey)) {
             // BLOCK:APP은 현재 Redis 상태와 목표 앱 목록을 diff로 동기화
@@ -273,6 +281,13 @@ public class PolicyConstraintSyncServiceImpl implements PolicyConstraintSyncServ
                 normalizedPolicyValue.normalizedNewValue(),
                 result);
         return LUA_RESULT_APPLIED.equals(result);
+    }
+
+    private boolean hasConstraintsKey(Long familyId, Long customerId) {
+        String constraintsKey =
+                redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId);
+        Boolean exists = familyStringRedisTemplate.hasKey(constraintsKey);
+        return Boolean.TRUE.equals(exists);
     }
 
     private boolean syncBlockedAppsToCustomer(
