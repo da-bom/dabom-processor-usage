@@ -34,7 +34,7 @@ com.project
 ├─ domain/{feature}/
 │   ├─ controller/            # REST 엔드포인트, ApiResponse<T> 반환
 │   ├─ service/               # Interface + Impl 구조
-│   │   └─ port/              # 인프라 추상화 인터페이스 (EventPublisher 등)
+│   │ 
 │   ├─ repository/            # Spring Data JPA 인터페이스
 │   ├─ entity/                # JPA 엔티티 (@Entity, @Builder)
 │   ├─ dto/
@@ -42,7 +42,7 @@ com.project
 │   │   └─ response/          # 응답 DTO (Java record + static from())
 │   └─ infra/                 # 인프라 어댑터
 │       ├─ cache/             # Redis 캐시 Repository
-│       └─ messaging/         # Kafka Producer/Consumer
+│       └─ messaging/         # EventPublisher(Interface) + Kafka Producer/Consumer
 └─ global/
     ├─ config/                # 횡단 설정 (Redis, Kafka, Swagger, CORS, ThreadPool)
     ├─ exception/             # ExceptionAdvice, BaseException, ErrorCode
@@ -191,7 +191,7 @@ family.addMember(customerId)
 
 ### 이벤트 (Kafka)
 
-- 이벤트 발행 인터페이스(`EventPublisher`)는 `service/port/`에, 구현체(`KafkaProducer`)는 `infra/messaging/`에 위치한다.
+- 이벤트 발행 인터페이스(`EventPublisher`)와 구현체(`KafkaProducer`)는 `infra/messaging/`에 위치한다.
 - Consumer는 데이터 파싱 후 **Service로 즉시 위임**한다. Consumer에 비즈니스 로직을 두지 않는다.
 - 공유 이벤트 Payload DTO는 `global/event/dto/`에 위치한다.
 - Kafka/Redis Config는 `global/config/`에 위치한다.
