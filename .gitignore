@@ -36,6 +36,9 @@ out/
 ### VS Code ###
 .vscode/
 
+### Node (Husky/lint-staged) ###
+node_modules/
+
 ### Env ###
 .env
 *.env

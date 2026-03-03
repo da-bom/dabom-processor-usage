@@ -14,4 +14,4 @@ if [ "$BRANCH_NAME" = "main" ] || [ "$BRANCH_NAME" = "master" ] || [ "$BRANCH_NA
   exit 1
 fi
 
-pnpm exec lint-staged
+npx lint-staged

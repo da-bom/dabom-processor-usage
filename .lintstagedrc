@@ -1,0 +1,3 @@
+{
+  "*.java": "./gradlew spotlessApply checkstyleMain checkstyleTest --daemon"
+}
