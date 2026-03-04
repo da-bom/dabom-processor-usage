@@ -155,7 +155,7 @@ public class UsageRedisWarmupHelper {
                                                 Expiration.unixTimestamp(
                                                         nextMonthStartEpochSecond,
                                                         TimeUnit.SECONDS),
-                                                SetOption.UPSERT);
+                                                SetOption.SET_IF_ABSENT);
                                     });
 
             if (Boolean.TRUE.equals(written)) {
