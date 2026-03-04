@@ -2,9 +2,14 @@ package com.project.domain.usage.service.helper;
 
 import java.time.LocalDate;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.connection.RedisStringCommands.SetOption;
+import org.springframework.data.redis.connection.StringRedisConnection;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.types.Expiration;
 import org.springframework.stereotype.Service;
 
 import com.project.domain.customer.entity.CustomerQuota;
@@ -13,6 +18,7 @@ import com.project.domain.family.entity.Family;
 import com.project.domain.family.repository.FamilyRepository;
 import com.project.domain.usage.infra.cache.dto.FamilyInfoRedisHash;
 import com.project.domain.usage.service.dto.FamilyInfo;
+import com.project.global.common.TimeConstants;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -129,20 +135,28 @@ public class UsageRedisWarmupHelper {
                                     familyId, customerId, currentMonth)
                             .orElse(null);
 
-            if (quota == null) {
-                log.warn(
-                        "CustomerQuota not found. familyId={}, customerId={}, currentMonth={}",
-                        familyId,
-                        customerId,
-                        currentMonth);
-                return false;
-            }
+            long usedBytes = (quota == null) ? 0L : Math.max(0L, quota.getMonthlyUsedBytes());
+            long nextMonthStartEpochSecond =
+                    currentMonth
+                            .plusMonths(1)
+                            .atStartOfDay(TimeConstants.ASIA_SEOUL)
+                            .toEpochSecond();
 
-            long usedBytes = Math.max(0L, quota.getMonthlyUsedBytes());
-
-            // Redis에 생성
+            // 키가 없어도 월초 첫 트래픽을 안전하게 처리하도록 0으로 시드하고 만료를 설정함
             Boolean written =
-                    stringRedisTemplate.opsForValue().setIfAbsent(key, String.valueOf(usedBytes));
+                    stringRedisTemplate.execute(
+                            (RedisCallback<Boolean>)
+                                    connection -> {
+                                        StringRedisConnection redisConnection =
+                                                (StringRedisConnection) connection;
+                                        return redisConnection.set(
+                                                key,
+                                                String.valueOf(usedBytes),
+                                                Expiration.unixTimestamp(
+                                                        nextMonthStartEpochSecond,
+                                                        TimeUnit.SECONDS),
+                                                SetOption.UPSERT);
+                                    });
 
             if (Boolean.TRUE.equals(written)) {
                 return true;
