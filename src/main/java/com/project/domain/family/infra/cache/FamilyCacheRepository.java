@@ -1,5 +1,6 @@
 package com.project.domain.family.infra.cache;
 
+import java.time.LocalDate;
 import java.util.Optional;
 
 import org.springframework.data.redis.core.RedisTemplate;
@@ -7,6 +8,7 @@ import org.springframework.stereotype.Repository;
 
 import com.project.domain.family.entity.Family;
 import com.project.domain.family.infra.cache.dto.FamilyCacheDto;
+import com.project.global.common.TimeConstants;
 import com.project.global.util.RedisKeyGenerator;
 
 import lombok.RequiredArgsConstructor;
@@ -46,7 +48,10 @@ public class FamilyCacheRepository {
     }
 
     public Optional<Long> findCustomerMonthlyUsageBytes(Long familyId, Long customerId) {
-        String key = redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(familyId, customerId);
+        LocalDate currentMonth = LocalDate.now(TimeConstants.ASIA_SEOUL).withDayOfMonth(1);
+        String key =
+                redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(
+                        familyId, customerId, currentMonth);
         return findLongValue(key);
     }
 

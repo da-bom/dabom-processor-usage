@@ -111,7 +111,8 @@ public class UsageRedisWarmupHelper {
         }
     }
 
-    public boolean ensureCustomerUsageCached(long familyId, long customerId, String key) {
+    public boolean ensureCustomerUsageCached(
+            long familyId, long customerId, String key, LocalDate eventMonth) {
         try {
             // Redis에 이미 존재하면 성공
             Boolean exists = stringRedisTemplate.hasKey(key);
@@ -119,25 +120,16 @@ public class UsageRedisWarmupHelper {
                 return true;
             }
 
-            // Family 조회 (currentMonth 확보용)
-            Family family = familyRepository.findById(familyId).orElse(null);
-            if (family == null) {
-                log.warn("Family not found. familyId={}", familyId);
-                return false;
-            }
-
-            LocalDate currentMonth = family.getCurrentMonth();
-
             // CustomerQuota 조회
             CustomerQuota quota =
                     customerQuotaRepository
                             .findActiveByFamilyIdAndCustomerIdAndCurrentMonth(
-                                    familyId, customerId, currentMonth)
+                                    familyId, customerId, eventMonth)
                             .orElse(null);
 
             long usedBytes = (quota == null) ? 0L : Math.max(0L, quota.getMonthlyUsedBytes());
             long nextMonthStartEpochSecond =
-                    currentMonth
+                    eventMonth
                             .plusMonths(1)
                             .atStartOfDay(TimeConstants.ASIA_SEOUL)
                             .toEpochSecond();
@@ -168,16 +160,20 @@ public class UsageRedisWarmupHelper {
 
         } catch (DataAccessException e) {
             log.error(
-                    "Data access error during usage cache warm-up. familyId={}, customerId={}",
+                    "Data access error during usage cache warm-up. familyId={}, customerId={},"
+                            + " eventMonth={}",
                     familyId,
                     customerId,
+                    eventMonth,
                     e);
             return false;
         } catch (RuntimeException e) {
             log.error(
-                    "Unexpected error during usage cache warm-up. familyId={}, customerId={}",
+                    "Unexpected error during usage cache warm-up. familyId={}, customerId={},"
+                            + " eventMonth={}",
                     familyId,
                     customerId,
+                    eventMonth,
                     e);
             return false;
         }
