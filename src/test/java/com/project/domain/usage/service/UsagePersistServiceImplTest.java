@@ -73,8 +73,7 @@ class UsagePersistServiceImplTest {
                 .persistAllowedQuota(payload, eventMonth, "evt_1", "origin_1");
         verify(familyUsageWriter, times(1))
                 .updateFamilyUsedBytes(100L, eventMonth, 2048L, "evt_1", "origin_1");
-        verify(customerQuotaWriter, never())
-                .persistBlockedQuota(any(), any(), any(), any(), any());
+        verify(customerQuotaWriter, never()).persistBlockedQuota(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -82,13 +81,7 @@ class UsagePersistServiceImplTest {
     void persist_BlockedEvent_OnlyPersistsBlockState() {
         UsagePersistPayload payload =
                 new UsagePersistPayload(
-                        "origin_2",
-                        200L,
-                        2L,
-                        1024L,
-                        "app",
-                        "TIME_BLOCK",
-                        "2026-03-20T10:20:30");
+                        "origin_2", 200L, 2L, 1024L, "app", "TIME_BLOCK", "2026-03-20T10:20:30");
         EventEnvelope<UsagePersistPayload> envelope =
                 new EventEnvelope<>("evt_2", "USAGE_PERSIST", null, LocalDateTime.now(), payload);
         LocalDate eventMonth = LocalDate.of(2026, 3, 1);

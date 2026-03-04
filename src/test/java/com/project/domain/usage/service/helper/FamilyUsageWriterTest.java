@@ -43,8 +43,7 @@ class FamilyUsageWriterTest {
     @DisplayName("family 월경계 업데이트가 성공하면 예외 없이 종료한다")
     void updateFamilyUsedBytes_Success() {
         LocalDate eventMonth = LocalDate.of(2026, 3, 1);
-        given(familyRepository.updateUsedBytesByEventMonth(100L, eventMonth, 1024L))
-                .willReturn(1);
+        given(familyRepository.updateUsedBytesByEventMonth(100L, eventMonth, 1024L)).willReturn(1);
 
         familyUsageWriter.updateFamilyUsedBytes(100L, eventMonth, 1024L, "evt_1", "origin_1");
 
@@ -55,8 +54,7 @@ class FamilyUsageWriterTest {
     @DisplayName("family row 업데이트에 실패하면 예외를 던진다")
     void updateFamilyUsedBytes_Fail_ThrowsException() {
         LocalDate eventMonth = LocalDate.of(2026, 3, 1);
-        given(familyRepository.updateUsedBytesByEventMonth(100L, eventMonth, 1024L))
-                .willReturn(0);
+        given(familyRepository.updateUsedBytesByEventMonth(100L, eventMonth, 1024L)).willReturn(0);
 
         assertThrows(
                 IllegalStateException.class,
