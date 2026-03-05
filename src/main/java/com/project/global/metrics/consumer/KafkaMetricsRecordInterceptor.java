@@ -31,8 +31,7 @@ public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, 
     @Override
     @Nullable
     public ConsumerRecord<String, String> intercept(
-            ConsumerRecord<String, String> consumerRecord,
-            @Nullable Consumer<String, String> consumer) {
+            ConsumerRecord<String, String> consumerRecord, Consumer<String, String> consumer) {
         setStartNanosHeader(consumerRecord);
 
         String eventName = extractEventType(consumerRecord);
@@ -40,7 +39,7 @@ public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, 
 
         kafkaMetrics.recordProducerToConsumerLatency(
                 consumerRecord.topic(),
-                consumer == null ? "UNKNOWN_GROUP" : consumer.groupMetadata().groupId(),
+                consumer.groupMetadata().groupId(),
                 eventName,
                 producedAt,
                 Instant.now());
@@ -50,11 +49,10 @@ public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, 
 
     @Override
     public void success(
-            ConsumerRecord<String, String> consumerRecord,
-            @Nullable Consumer<String, String> consumer) {
+            ConsumerRecord<String, String> consumerRecord, Consumer<String, String> consumer) {
         long started = getStartNanos(consumerRecord);
         String eventName = extractEventType(consumerRecord);
-        String group = consumer == null ? "UNKNOWN_GROUP" : consumer.groupMetadata().groupId();
+        String group = consumer.groupMetadata().groupId();
 
         kafkaMetrics.incrementSuccess(consumerRecord.topic(), group, eventName);
         kafkaMetrics.recordProcessingTime(
@@ -68,10 +66,10 @@ public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, 
     public void failure(
             ConsumerRecord<String, String> consumerRecord,
             Exception ex,
-            @Nullable Consumer<String, String> consumer) {
+            Consumer<String, String> consumer) {
         long started = getStartNanos(consumerRecord);
         String eventName = extractEventType(consumerRecord);
-        String group = consumer == null ? "UNKNOWN_GROUP" : consumer.groupMetadata().groupId();
+        String group = consumer.groupMetadata().groupId();
 
         kafkaMetrics.incrementRetryableError(consumerRecord.topic(), group, eventName);
         kafkaMetrics.recordProcessingTime(
