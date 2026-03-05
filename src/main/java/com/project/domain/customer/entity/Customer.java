@@ -26,7 +26,7 @@ public class Customer extends BaseEntity {
     @Column(nullable = false, unique = true, length = 11)
     private String phoneNumber;
 
-    @Column(nullable = false, length = 20)
+    @Column(nullable = false, length = 60)
     private String passwordHash;
 
     @Column(nullable = false, length = 10)
