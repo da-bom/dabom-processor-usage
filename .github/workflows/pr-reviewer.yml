@@ -23,7 +23,7 @@ jobs:
             // 리뷰어 목록 설정
             // scripts/github-config.env의 REVIEWERS 값과 동기화하세요
             // ============================================================
-            const reviewers = ['user1', 'user2', 'user3'];
+            const reviewers = ['ChoiSeungeon', 'k0081915', 'swthewhite'];
 
             const prAuthor = context.payload.pull_request.user.login;
             const prNumber = context.payload.pull_request.number;
