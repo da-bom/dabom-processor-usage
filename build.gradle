@@ -93,6 +93,8 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation 'org.springframework.kafka:spring-kafka-test'
     testRuntimeOnly 'com.h2database:h2'
+
+    implementation 'com.google.protobuf:protobuf-java:3.25.5'
 }
 
 // ============================================================================
