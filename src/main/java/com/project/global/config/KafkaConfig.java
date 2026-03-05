@@ -25,7 +25,7 @@ import com.project.global.metrics.producer.KafkaMetricsProducerListener;
 
 import lombok.RequiredArgsConstructor;
 
-/** Kafka configuration. */
+/** Kafka 설정 */
 @EnableKafka
 @Configuration
 @RequiredArgsConstructor
@@ -34,13 +34,15 @@ public class KafkaConfig {
     @Value("${spring.kafka.bootstrap-servers:localhost:9092}")
     private String bootstrapServers;
 
+    // ========================================================================
+    // Producer 설정
+    // ========================================================================
     @Bean
     public ProducerFactory<String, Object> producerFactory() {
         Map<String, Object> config = new HashMap<>();
         config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
-        // Do not add type headers to avoid DTO mapping conflicts on consumers.
         config.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
         return new DefaultKafkaProducerFactory<>(config);
     }
@@ -54,6 +56,9 @@ public class KafkaConfig {
         return kafkaTemplate;
     }
 
+    // ========================================================================
+    // Consumer 설정
+    // ========================================================================
     @Bean
     public ConsumerFactory<String, String> consumerFactory() {
         Map<String, Object> config = new HashMap<>();
