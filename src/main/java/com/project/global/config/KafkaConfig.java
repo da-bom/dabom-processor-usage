@@ -20,13 +20,12 @@ import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonSerializer;
 
+import com.project.global.metrics.consumer.KafkaMetricsRecordInterceptor;
+import com.project.global.metrics.producer.KafkaMetricsProducerListener;
+
 import lombok.RequiredArgsConstructor;
 
-/**
- * Kafka 설정
- *
- * <p>키는 String으로 변환 값은 JSON으로 변환 에러처리는 일단 ErrorHandlingDeserializer 맡김
- */
+/** Kafka configuration. */
 @EnableKafka
 @Configuration
 @RequiredArgsConstructor
@@ -35,50 +34,44 @@ public class KafkaConfig {
     @Value("${spring.kafka.bootstrap-servers:localhost:9092}")
     private String bootstrapServers;
 
-    // ========================================================================
-    // 1. Producer 설정
-    // ========================================================================
     @Bean
     public ProducerFactory<String, Object> producerFactory() {
         Map<String, Object> config = new HashMap<>();
         config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        config.put(
-                ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
-                StringSerializer.class); // 키는 String으로 변환
-        config.put(
-                ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class); // 값은 JSON으로 변환
-
-        // Type 정보 헤더를 넣지 않음 (Consumer에서 DTO 매핑 시 혼란 방지)
+        config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+        // Do not add type headers to avoid DTO mapping conflicts on consumers.
         config.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
         return new DefaultKafkaProducerFactory<>(config);
     }
 
     @Bean
-    public KafkaTemplate<String, Object> kafkaTemplate() {
-        return new KafkaTemplate<>(producerFactory());
+    public KafkaTemplate<String, Object> kafkaTemplate(
+            KafkaMetricsProducerListener producerListener) {
+        KafkaTemplate<String, Object> kafkaTemplate = new KafkaTemplate<>(producerFactory());
+        kafkaTemplate.setObservationEnabled(true);
+        kafkaTemplate.setProducerListener(producerListener);
+        return kafkaTemplate;
     }
 
-    // ========================================================================
-    // 2. Consumer 설정
-    // ========================================================================
     @Bean
-    public ConsumerFactory<String, Object> consumerFactory() {
+    public ConsumerFactory<String, String> consumerFactory() {
         Map<String, Object> config = new HashMap<>();
         config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-
-        // 에러 처리
         config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
         config.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, StringDeserializer.class);
-
         return new DefaultKafkaConsumerFactory<>(config);
     }
 
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, Object> kafkaListenerContainerFactory() {
-        ConcurrentKafkaListenerContainerFactory<String, Object> factory =
+    public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory(
+            KafkaMetricsRecordInterceptor recordInterceptor) {
+        ConcurrentKafkaListenerContainerFactory<String, String> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory());
+        factory.getContainerProperties().setObservationEnabled(true);
+        factory.setRecordInterceptor(recordInterceptor);
         return factory;
     }
 }
