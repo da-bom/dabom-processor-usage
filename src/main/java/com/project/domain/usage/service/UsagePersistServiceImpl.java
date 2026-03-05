@@ -82,7 +82,7 @@ public class UsagePersistServiceImpl implements UsagePersistService {
         // 4) 허용 이벤트의 월 누적 반영
         customerQuotaWriter.persistAllowedQuota(payload, currentMonth, eventId, originEventId);
         familyUsageWriter.updateFamilyUsedBytes(
-                payload.familyId(), payload.bytesUsed(), eventId, originEventId);
+                payload.familyId(), currentMonth, payload.bytesUsed(), eventId, originEventId);
     }
 
     private boolean isValidFamilyMember(Long familyId, Long customerId) {

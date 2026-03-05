@@ -1,5 +1,6 @@
 package com.project.domain.usage.service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -47,12 +48,15 @@ public class UsageSyncServiceImpl implements UsageSyncService {
         Long familyId = payload.familyId();
         Long customerId = payload.customerId();
         long usageBytes = payload.bytesUsed();
+        LocalDateTime resolvedEventDateTime = resolveEventDateTime(eventTime);
+        LocalDate eventMonth = resolvedEventDateTime.toLocalDate().withDayOfMonth(1);
 
         // Redis Key 생성
         String infoKey = redisKeyGenerator.generateFamilyInfoKey(familyId);
         String remainingKey = redisKeyGenerator.generateFamilyRemainingKey(familyId);
         String monthlyKey =
-                redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(familyId, customerId);
+                redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(
+                        familyId, customerId, eventMonth);
         String constraintsKey =
                 redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId);
         String alertsKey = redisKeyGenerator.generateFamilyAlertsKey(familyId);
@@ -63,7 +67,8 @@ public class UsageSyncServiceImpl implements UsageSyncService {
         boolean familyRemainingRedisWarmup =
                 usageRedisWarmupHelper.ensureRemainingBytesCached(familyId, remainingKey);
         boolean customerMonthlyUsageRedisWarmup =
-                usageRedisWarmupHelper.ensureCustomerUsageCached(familyId, customerId, monthlyKey);
+                usageRedisWarmupHelper.ensureCustomerUsageCached(
+                        familyId, customerId, monthlyKey, eventMonth);
         policyConstraintWarmupHelper.warmupIfMissing(familyId, customerId);
 
         if (!familyInfoRedisWarmup
@@ -73,7 +78,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
             return;
         }
 
-        String currentHhmm = resolveCurrentHhmm(eventTime);
+        String currentHhmm = resolvedEventDateTime.format(HHMM_FORMATTER);
 
         // Lua Script 실행 + 결과 파싱
         UsageUpdateResult parsed =
@@ -98,16 +103,16 @@ public class UsageSyncServiceImpl implements UsageSyncService {
                 new UsageEventPublisher.UsageEventContext(eventId, eventTime, payload, parsed));
     }
 
-    private String resolveCurrentHhmm(String eventTime) {
+    private LocalDateTime resolveEventDateTime(String eventTime) {
         // producer가 전달한 eventTime이 있으면 우선 사용한다.
         if (eventTime != null && !eventTime.isBlank()) {
             try {
-                return LocalDateTime.parse(eventTime).format(HHMM_FORMATTER);
+                return LocalDateTime.parse(eventTime);
             } catch (DateTimeParseException ignored) {
                 log.debug("Failed to parse eventTime: {}", logSanitizer.sanitize(eventTime));
             }
         }
         // eventTime이 없거나 파싱 실패 시 서버 현재 시각으로 보정한다.
-        return LocalDateTime.now(TimeConstants.ASIA_SEOUL).format(HHMM_FORMATTER);
+        return LocalDateTime.now(TimeConstants.ASIA_SEOUL);
     }
 }

@@ -10,7 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -58,10 +58,11 @@ class UsageSyncServiceImplTest {
     @DisplayName("정상 흐름이면 Lua 실행 후 이벤트 발행기로 위임한다")
     void syncUsage_SuccessFlow() {
         String eventId = "evt_1";
-        String eventTime = LocalDateTime.now().toString();
+        String eventTime = "2026-03-04T12:34:56";
+        LocalDate eventMonth = LocalDate.of(2026, 3, 1);
         UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
 
-        stubCommon(100L, 1L);
+        stubCommon(100L, 1L, eventMonth);
 
         UsageUpdateResult luaResult =
                 new UsageUpdateResult(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L);
@@ -81,7 +82,7 @@ class UsageSyncServiceImplTest {
         assertEquals("constraintsKey", command.constraintsKey());
         assertEquals("alertsKey", command.alertsKey());
         assertEquals(1024L, command.usageBytes());
-        assertEquals(4, command.currentHhmm().length());
+        assertEquals("1234", command.currentHhmm());
 
         verify(usageEventPublisher, times(1))
                 .publish(any(UsageEventPublisher.UsageEventContext.class));
@@ -91,12 +92,14 @@ class UsageSyncServiceImplTest {
     @DisplayName("Warmup 실패 시 Lua 실행과 이벤트 발행을 하지 않는다")
     void syncUsage_WarmupFailed() {
         String eventId = "evt_2";
+        String eventTime = "2026-03-04T10:10:10";
+        LocalDate eventMonth = LocalDate.of(2026, 3, 1);
         UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
 
         given(redisKeyGenerator.generateFamilyInfoKey(100L)).willReturn("family:100:info");
         given(redisKeyGenerator.generateFamilyRemainingKey(100L))
                 .willReturn("family:100:remaining");
-        given(redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(100L, 1L))
+        given(redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(100L, 1L, eventMonth))
                 .willReturn("monthlyKey");
         given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L))
                 .willReturn("constraintsKey");
@@ -106,21 +109,23 @@ class UsageSyncServiceImplTest {
                 .willReturn(false);
         given(usageRedisWarmupHelper.ensureRemainingBytesCached(100L, "family:100:remaining"))
                 .willReturn(true);
-        given(usageRedisWarmupHelper.ensureCustomerUsageCached(100L, 1L, "monthlyKey"))
+        given(usageRedisWarmupHelper.ensureCustomerUsageCached(100L, 1L, "monthlyKey", eventMonth))
                 .willReturn(true);
 
-        usageSyncServiceImpl.syncUsage(eventId, LocalDateTime.now().toString(), payload);
+        usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
 
         verify(usageLuaExecutor, never()).execute(any(), any());
         verify(usageEventPublisher, never()).publish(any());
     }
 
-    private void stubCommon(long familyId, long customerId) {
+    private void stubCommon(long familyId, long customerId, LocalDate eventMonth) {
         given(redisKeyGenerator.generateFamilyInfoKey(familyId))
                 .willReturn("family:" + familyId + ":info");
         given(redisKeyGenerator.generateFamilyRemainingKey(familyId))
                 .willReturn("family:" + familyId + ":remaining");
-        given(redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(familyId, customerId))
+        given(
+                        redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(
+                                familyId, customerId, eventMonth))
                 .willReturn("monthlyKey");
         given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId))
                 .willReturn("constraintsKey");
@@ -133,7 +138,9 @@ class UsageSyncServiceImplTest {
                         usageRedisWarmupHelper.ensureRemainingBytesCached(
                                 familyId, "family:" + familyId + ":remaining"))
                 .willReturn(true);
-        given(usageRedisWarmupHelper.ensureCustomerUsageCached(familyId, customerId, "monthlyKey"))
+        given(
+                        usageRedisWarmupHelper.ensureCustomerUsageCached(
+                                familyId, customerId, "monthlyKey", eventMonth))
                 .willReturn(true);
     }
 }

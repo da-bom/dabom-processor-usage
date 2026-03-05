@@ -1,6 +1,6 @@
 -- KEYS[1]: family:{fid}:info
 -- KEYS[2]: family:{fid}:remaining
--- KEYS[3]: family:{fid}:customer:{uid}:usage:monthly
+-- KEYS[3]: family:{fid}:customer:{uid}:usage:monthly:{yyyyMM}
 -- KEYS[4]: family:{fid}:customer:{uid}:constraints
 -- KEYS[5]: family:{fid}:alert:THRESHOLD (prefix)
 -- ARGV[1]: usageBytes

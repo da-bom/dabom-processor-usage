@@ -2,9 +2,14 @@ package com.project.domain.usage.service.helper;
 
 import java.time.LocalDate;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.connection.RedisStringCommands.SetOption;
+import org.springframework.data.redis.connection.StringRedisConnection;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.types.Expiration;
 import org.springframework.stereotype.Service;
 
 import com.project.domain.customer.entity.CustomerQuota;
@@ -13,6 +18,7 @@ import com.project.domain.family.entity.Family;
 import com.project.domain.family.repository.FamilyRepository;
 import com.project.domain.usage.infra.cache.dto.FamilyInfoRedisHash;
 import com.project.domain.usage.service.dto.FamilyInfo;
+import com.project.global.common.TimeConstants;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -105,7 +111,8 @@ public class UsageRedisWarmupHelper {
         }
     }
 
-    public boolean ensureCustomerUsageCached(long familyId, long customerId, String key) {
+    public boolean ensureCustomerUsageCached(
+            long familyId, long customerId, String key, LocalDate eventMonth) {
         try {
             // Redis에 이미 존재하면 성공
             Boolean exists = stringRedisTemplate.hasKey(key);
@@ -113,36 +120,32 @@ public class UsageRedisWarmupHelper {
                 return true;
             }
 
-            // Family 조회 (currentMonth 확보용)
-            Family family = familyRepository.findById(familyId).orElse(null);
-            if (family == null) {
-                log.warn("Family not found. familyId={}", familyId);
-                return false;
-            }
-
-            LocalDate currentMonth = family.getCurrentMonth();
-
             // CustomerQuota 조회
             CustomerQuota quota =
                     customerQuotaRepository
                             .findActiveByFamilyIdAndCustomerIdAndCurrentMonth(
-                                    familyId, customerId, currentMonth)
+                                    familyId, customerId, eventMonth)
                             .orElse(null);
 
-            if (quota == null) {
-                log.warn(
-                        "CustomerQuota not found. familyId={}, customerId={}, currentMonth={}",
-                        familyId,
-                        customerId,
-                        currentMonth);
-                return false;
-            }
+            long usedBytes = (quota == null) ? 0L : Math.max(0L, quota.getMonthlyUsedBytes());
+            long nextMonthStartEpochSecond =
+                    eventMonth.plusMonths(1).atStartOfDay(TimeConstants.ASIA_SEOUL).toEpochSecond();
 
-            long usedBytes = Math.max(0L, quota.getMonthlyUsedBytes());
-
-            // Redis에 생성
+            // 키가 없어도 월초 첫 트래픽을 안전하게 처리하도록 0으로 시드하고 만료를 설정함
             Boolean written =
-                    stringRedisTemplate.opsForValue().setIfAbsent(key, String.valueOf(usedBytes));
+                    stringRedisTemplate.execute(
+                            (RedisCallback<Boolean>)
+                                    connection -> {
+                                        StringRedisConnection redisConnection =
+                                                (StringRedisConnection) connection;
+                                        return redisConnection.set(
+                                                key,
+                                                String.valueOf(usedBytes),
+                                                Expiration.unixTimestamp(
+                                                        nextMonthStartEpochSecond,
+                                                        TimeUnit.SECONDS),
+                                                SetOption.SET_IF_ABSENT);
+                                    });
 
             if (Boolean.TRUE.equals(written)) {
                 return true;
@@ -154,16 +157,20 @@ public class UsageRedisWarmupHelper {
 
         } catch (DataAccessException e) {
             log.error(
-                    "Data access error during usage cache warm-up. familyId={}, customerId={}",
+                    "Data access error during usage cache warm-up. familyId={}, customerId={},"
+                            + " eventMonth={}",
                     familyId,
                     customerId,
+                    eventMonth,
                     e);
             return false;
         } catch (RuntimeException e) {
             log.error(
-                    "Unexpected error during usage cache warm-up. familyId={}, customerId={}",
+                    "Unexpected error during usage cache warm-up. familyId={}, customerId={},"
+                            + " eventMonth={}",
                     familyId,
                     customerId,
+                    eventMonth,
                     e);
             return false;
         }

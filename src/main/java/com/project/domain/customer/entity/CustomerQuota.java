@@ -51,7 +51,7 @@ public class CustomerQuota extends BaseEntity {
     @Column(name = "is_blocked", nullable = false)
     private boolean isBlocked;
 
-    @Column(name = "block_reason")
+    @Column(name = "block_reason", length = 50)
     private String blockReason;
 
     @Builder
