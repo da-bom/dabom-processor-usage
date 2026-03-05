@@ -18,17 +18,17 @@ public class KafkaMetricsProducerListener implements ProducerListener<String, Ob
 
     // 성공
     @Override
-    public void onSuccess(ProducerRecord<String, Object> record, RecordMetadata metadata) {
-        String eventType = extractEventType(record.value());
-        kafkaMetrics.incrementProducerSendSuccess(record.topic(), eventType);
+    public void onSuccess(ProducerRecord<String, Object> producerRecord, RecordMetadata metadata) {
+        String eventType = extractEventType(producerRecord.value());
+        kafkaMetrics.incrementProducerSendSuccess(producerRecord.topic(), eventType);
     }
 
     // 실패
     @Override
     public void onError(
-            ProducerRecord<String, Object> record, RecordMetadata metadata, Exception ex) {
-        String eventType = extractEventType(record.value());
-        kafkaMetrics.incrementProducerSendError(record.topic(), eventType);
+            ProducerRecord<String, Object> producerRecord, RecordMetadata metadata, Exception ex) {
+        String eventType = extractEventType(producerRecord.value());
+        kafkaMetrics.incrementProducerSendError(producerRecord.topic(), eventType);
     }
 
     private String extractEventType(Object value) {
