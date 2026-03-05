@@ -29,8 +29,7 @@ public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, 
     private final ObjectMapper objectMapper;
 
     @Override
-    @Nullable
-    public ConsumerRecord<String, String> intercept(
+    public @Nullable ConsumerRecord<String, String> intercept(
             ConsumerRecord<String, String> consumerRecord, Consumer<String, String> consumer) {
         setStartNanosHeader(consumerRecord);
 
