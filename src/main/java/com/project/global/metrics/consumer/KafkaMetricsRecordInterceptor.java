@@ -104,8 +104,7 @@ public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, 
         try {
             JsonNode root = objectMapper.readTree(rawValue);
             String rawEventType =
-                    root.path("eventType")
-                            .asText(KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE);
+                    root.path("eventType").asText(KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE);
             return KafkaMetricTagSanitizer.normalizeEventType(rawEventType);
         } catch (Exception ignored) {
             return KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE;

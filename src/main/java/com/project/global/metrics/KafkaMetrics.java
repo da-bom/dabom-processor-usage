@@ -123,7 +123,8 @@ public class KafkaMetrics {
                 .increment();
     }
 
-    public void recordProcessingTime(String topic, String group, String eventType, Duration duration) {
+    public void recordProcessingTime(
+            String topic, String group, String eventType, Duration duration) {
         String safeEventType = KafkaMetricTagSanitizer.normalizeEventType(eventType);
         Timer.builder("kafka.consumer.processing.time")
                 .tags("topic", topic, "group", group, "eventType", safeEventType)
