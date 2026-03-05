@@ -1,13 +1,13 @@
 package com.project.global.metrics.consumer;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.header.Headers;
 import org.springframework.kafka.listener.RecordInterceptor;
 import org.springframework.stereotype.Component;
 
@@ -22,20 +22,19 @@ import lombok.RequiredArgsConstructor;
 @Component
 @RequiredArgsConstructor
 public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, String> {
+    private static final String START_NANOS_HEADER = "x-metrics-start-nanos";
+
     private final KafkaMetrics kafkaMetrics;
     private final ObjectMapper objectMapper;
-    private final ConcurrentMap<String, Long> start = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, String> eventType = new ConcurrentHashMap<>();
 
     @Override
     public ConsumerRecord<String, String> intercept(
             ConsumerRecord<String, String> consumerRecord, Consumer<String, String> consumer) {
-        start.put(key(consumerRecord), System.nanoTime());
+        setStartNanosHeader(consumerRecord);
 
         String eventName = extractEventType(consumerRecord);
-        eventType.put(key(consumerRecord), eventName);
-
         Instant producedAt = extractProducedAt(consumerRecord);
+
         kafkaMetrics.recordProducerToConsumerLatency(
                 consumerRecord.topic(),
                 consumer.groupMetadata().groupId(),
@@ -46,14 +45,12 @@ public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, 
         return consumerRecord;
     }
 
-    // 성공했을 때 동작
     @Override
     public void success(
             ConsumerRecord<String, String> consumerRecord, Consumer<String, String> consumer) {
-        long started = start.getOrDefault(key(consumerRecord), System.nanoTime());
-        String eventName =
-                eventType.getOrDefault(
-                        key(consumerRecord), KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE);
+        long started = getStartNanos(consumerRecord);
+        String eventName = extractEventType(consumerRecord);
+
         kafkaMetrics.incrementSuccess(
                 consumerRecord.topic(), consumer.groupMetadata().groupId(), eventName);
         kafkaMetrics.recordProcessingTime(
@@ -61,20 +58,16 @@ public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, 
                 consumer.groupMetadata().groupId(),
                 eventName,
                 Duration.ofNanos(System.nanoTime() - started));
-        start.remove(key(consumerRecord));
-        eventType.remove(key(consumerRecord));
     }
 
-    // 실패했을 때 동작
     @Override
     public void failure(
             ConsumerRecord<String, String> consumerRecord,
             Exception ex,
             Consumer<String, String> consumer) {
-        long started = start.getOrDefault(key(consumerRecord), System.nanoTime());
-        String eventName =
-                eventType.getOrDefault(
-                        key(consumerRecord), KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE);
+        long started = getStartNanos(consumerRecord);
+        String eventName = extractEventType(consumerRecord);
+
         kafkaMetrics.incrementRetryableError(
                 consumerRecord.topic(), consumer.groupMetadata().groupId(), eventName);
         kafkaMetrics.recordProcessingTime(
@@ -82,32 +75,41 @@ public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, 
                 consumer.groupMetadata().groupId(),
                 eventName,
                 Duration.ofNanos(System.nanoTime() - started));
-        start.remove(key(consumerRecord));
-        eventType.remove(key(consumerRecord));
     }
 
-    // 키 생성
-    private String key(ConsumerRecord<String, String> consumerRecord) {
-        return consumerRecord.topic()
-                + "-"
-                + consumerRecord.partition()
-                + "-"
-                + consumerRecord.offset();
-    }
-
-    // 이벤트 타입 추출
     private String extractEventType(ConsumerRecord<String, String> consumerRecord) {
         String rawValue = consumerRecord.value();
         if (rawValue == null || rawValue.isBlank()) {
             return KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE;
         }
+
         try {
             JsonNode root = objectMapper.readTree(rawValue);
-            String rawEventType =
-                    root.path("eventType").asText(KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE);
+            String rawEventType = root.path("eventType").asText(KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE);
             return KafkaMetricTagSanitizer.normalizeEventType(rawEventType);
         } catch (Exception ignored) {
             return KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE;
+        }
+    }
+
+    private void setStartNanosHeader(ConsumerRecord<String, String> consumerRecord) {
+        Headers headers = consumerRecord.headers();
+        headers.remove(START_NANOS_HEADER);
+        headers.add(
+                START_NANOS_HEADER,
+                Long.toString(System.nanoTime()).getBytes(StandardCharsets.UTF_8));
+    }
+
+    private long getStartNanos(ConsumerRecord<String, String> consumerRecord) {
+        var header = consumerRecord.headers().lastHeader(START_NANOS_HEADER);
+        if (header == null || header.value() == null) {
+            return System.nanoTime();
+        }
+
+        try {
+            return Long.parseLong(new String(header.value(), StandardCharsets.UTF_8));
+        } catch (Exception ignored) {
+            return System.nanoTime();
         }
     }
 
