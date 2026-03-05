@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.global.common.TimeConstants;
+import com.project.global.metrics.KafkaMetricTagSanitizer;
 import com.project.global.metrics.KafkaMetrics;
 
 import lombok.RequiredArgsConstructor;
@@ -50,7 +51,9 @@ public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, 
     public void success(
             ConsumerRecord<String, String> consumerRecord, Consumer<String, String> consumer) {
         long started = start.getOrDefault(key(consumerRecord), System.nanoTime());
-        String eventName = eventType.getOrDefault(key(consumerRecord), "UNKNOWN");
+        String eventName =
+                eventType.getOrDefault(
+                        key(consumerRecord), KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE);
         kafkaMetrics.incrementSuccess(
                 consumerRecord.topic(), consumer.groupMetadata().groupId(), eventName);
         kafkaMetrics.recordProcessingTime(
@@ -69,7 +72,9 @@ public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, 
             Exception ex,
             Consumer<String, String> consumer) {
         long started = start.getOrDefault(key(consumerRecord), System.nanoTime());
-        String eventName = eventType.getOrDefault(key(consumerRecord), "UNKNOWN");
+        String eventName =
+                eventType.getOrDefault(
+                        key(consumerRecord), KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE);
         kafkaMetrics.incrementRetryableError(
                 consumerRecord.topic(), consumer.groupMetadata().groupId(), eventName);
         kafkaMetrics.recordProcessingTime(
@@ -94,13 +99,16 @@ public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, 
     private String extractEventType(ConsumerRecord<String, String> consumerRecord) {
         String rawValue = consumerRecord.value();
         if (rawValue == null || rawValue.isBlank()) {
-            return "UNKNOWN";
+            return KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE;
         }
         try {
             JsonNode root = objectMapper.readTree(rawValue);
-            return root.path("eventType").asText("UNKNOWN");
+            String rawEventType =
+                    root.path("eventType")
+                            .asText(KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE);
+            return KafkaMetricTagSanitizer.normalizeEventType(rawEventType);
         } catch (Exception ignored) {
-            return "UNKNOWN";
+            return KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE;
         }
     }
 

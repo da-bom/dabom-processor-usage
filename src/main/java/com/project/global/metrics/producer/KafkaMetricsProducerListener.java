@@ -6,6 +6,7 @@ import org.springframework.kafka.support.ProducerListener;
 import org.springframework.stereotype.Component;
 
 import com.project.global.event.dto.EventEnvelope;
+import com.project.global.metrics.KafkaMetricTagSanitizer;
 import com.project.global.metrics.KafkaMetrics;
 
 import lombok.RequiredArgsConstructor;
@@ -32,8 +33,8 @@ public class KafkaMetricsProducerListener implements ProducerListener<String, Ob
 
     private String extractEventType(Object value) {
         if (value instanceof EventEnvelope<?> envelope && envelope.eventType() != null) {
-            return envelope.eventType();
+            return KafkaMetricTagSanitizer.normalizeEventType(envelope.eventType());
         }
-        return "UNKNOWN";
+        return KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE;
     }
 }
