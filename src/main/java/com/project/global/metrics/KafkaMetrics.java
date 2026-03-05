@@ -13,6 +13,10 @@ import lombok.RequiredArgsConstructor;
 @Component
 @RequiredArgsConstructor
 public class KafkaMetrics {
+    private static final String TAG_TOPIC = "topic";
+    private static final String TAG_GROUP = "group";
+    private static final String TAG_EVENT_TYPE = "eventType";
+    private static final String TAG_RESULT = "result";
 
     private final MeterRegistry meterRegistry;
 
@@ -21,11 +25,11 @@ public class KafkaMetrics {
         meterRegistry
                 .counter(
                         "kafka.producer.send.success.count",
-                        "topic",
+                        TAG_TOPIC,
                         topic,
-                        "eventType",
+                        TAG_EVENT_TYPE,
                         safeEventType,
-                        "result",
+                        TAG_RESULT,
                         "success")
                 .increment();
     }
@@ -35,11 +39,11 @@ public class KafkaMetrics {
         meterRegistry
                 .counter(
                         "kafka.producer.send.error.count",
-                        "topic",
+                        TAG_TOPIC,
                         topic,
-                        "eventType",
+                        TAG_EVENT_TYPE,
                         safeEventType,
-                        "result",
+                        TAG_RESULT,
                         "error")
                 .increment();
     }
@@ -47,7 +51,7 @@ public class KafkaMetrics {
     public void recordProducerSendLatency(String topic, String eventType, Duration duration) {
         String safeEventType = KafkaMetricTagSanitizer.normalizeEventType(eventType);
         Timer.builder("kafka.producer.send.latency")
-                .tags("topic", topic, "eventType", safeEventType)
+                .tags(TAG_TOPIC, topic, TAG_EVENT_TYPE, safeEventType)
                 .publishPercentileHistogram(true)
                 .register(meterRegistry)
                 .record(duration);
@@ -58,11 +62,11 @@ public class KafkaMetrics {
         meterRegistry
                 .counter(
                         "kafka.consumer.success.count",
-                        "topic",
+                        TAG_TOPIC,
                         topic,
-                        "group",
+                        TAG_GROUP,
                         group,
-                        "eventType",
+                        TAG_EVENT_TYPE,
                         safeEventType)
                 .increment();
     }
@@ -72,11 +76,11 @@ public class KafkaMetrics {
         meterRegistry
                 .counter(
                         "kafka.consumer.invalid_event.count",
-                        "topic",
+                        TAG_TOPIC,
                         topic,
-                        "group",
+                        TAG_GROUP,
                         group,
-                        "eventType",
+                        TAG_EVENT_TYPE,
                         safeEventType)
                 .increment();
     }
@@ -86,11 +90,11 @@ public class KafkaMetrics {
         meterRegistry
                 .counter(
                         "kafka.consumer.retryable_error.count",
-                        "topic",
+                        TAG_TOPIC,
                         topic,
-                        "group",
+                        TAG_GROUP,
                         group,
-                        "eventType",
+                        TAG_EVENT_TYPE,
                         safeEventType)
                 .increment();
     }
@@ -100,11 +104,11 @@ public class KafkaMetrics {
         meterRegistry
                 .counter(
                         "kafka.consumer.dlt.count",
-                        "topic",
+                        TAG_TOPIC,
                         topic,
-                        "group",
+                        TAG_GROUP,
                         group,
-                        "eventType",
+                        TAG_EVENT_TYPE,
                         safeEventType)
                 .increment();
     }
@@ -114,11 +118,11 @@ public class KafkaMetrics {
         meterRegistry
                 .counter(
                         "kafka.consumer.dedup_hit.count",
-                        "topic",
+                        TAG_TOPIC,
                         topic,
-                        "group",
+                        TAG_GROUP,
                         group,
-                        "eventType",
+                        TAG_EVENT_TYPE,
                         safeEventType)
                 .increment();
     }
@@ -127,7 +131,7 @@ public class KafkaMetrics {
             String topic, String group, String eventType, Duration duration) {
         String safeEventType = KafkaMetricTagSanitizer.normalizeEventType(eventType);
         Timer.builder("kafka.consumer.processing.time")
-                .tags("topic", topic, "group", group, "eventType", safeEventType)
+                .tags(TAG_TOPIC, topic, TAG_GROUP, group, TAG_EVENT_TYPE, safeEventType)
                 .publishPercentileHistogram(true)
                 .register(meterRegistry)
                 .record(duration);
@@ -142,7 +146,7 @@ public class KafkaMetrics {
         Duration latency = Duration.between(producedAt, consumedAt);
         String safeEventType = KafkaMetricTagSanitizer.normalizeEventType(eventType);
         Timer.builder("kafka.consumer.producer_to_consumer.latency")
-                .tags("topic", topic, "group", group, "eventType", safeEventType)
+                .tags(TAG_TOPIC, topic, TAG_GROUP, group, TAG_EVENT_TYPE, safeEventType)
                 .publishPercentileHistogram(true)
                 .register(meterRegistry)
                 .record(latency);
