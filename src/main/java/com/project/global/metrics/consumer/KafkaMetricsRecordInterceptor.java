@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Headers;
@@ -20,6 +21,7 @@ import com.project.global.metrics.KafkaMetrics;
 
 import lombok.RequiredArgsConstructor;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, String> {
@@ -91,6 +93,7 @@ public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, 
                     root.path("eventType").asText(KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE);
             return KafkaMetricTagSanitizer.normalizeEventType(rawEventType);
         } catch (Exception ignored) {
+            log.warn("Failed to extract event type from Kafka record. Value: {}", rawValue);
             return KafkaMetricTagSanitizer.UNKNOWN_EVENT_TYPE;
         }
     }
@@ -124,6 +127,7 @@ public class KafkaMetricsRecordInterceptor implements RecordInterceptor<String, 
             }
             return LocalDateTime.parse(ts).atZone(TimeConstants.ASIA_SEOUL).toInstant();
         } catch (Exception ignored) {
+            log.warn("Failed to parse LocalDateTime");
             return null;
         }
     }
