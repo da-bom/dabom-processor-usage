@@ -20,13 +20,15 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class UsageEventsConsumer {
 
+    private static final String GROUP = "dabom-processor-usage-main-group";
+
     private final ObjectMapper objectMapper;
     private final UsageSyncService usageSyncService;
     private final UsageEventValidator validator;
 
     private final LogSanitizer logSanitizer;
 
-    @KafkaListener(topics = "usage-events", groupId = "dabom-processor-usage-main-group")
+    @KafkaListener(topics = "usage-events", groupId = GROUP)
     public void consume(ConsumerRecord<String, String> consumerRecord) {
         try {
             // JSON 역직렬화
@@ -35,6 +37,7 @@ public class UsageEventsConsumer {
                             consumerRecord.value(),
                             new TypeReference<EventEnvelope<UsagePayload>>() {});
 
+            // 이벤트로부터 정보 추출
             String eventId = envelope.eventId();
             UsagePayload payload = envelope.payload();
 
@@ -52,7 +55,7 @@ public class UsageEventsConsumer {
                     logSanitizer.sanitize(eventId),
                     logSanitizer.sanitize(consumerRecord.key()));
 
-            // 비즈니스 로직 위임
+            // 비즈니스 로직 실행
             usageSyncService.syncUsage(eventId, envelope.timestamp().toString(), payload);
         } catch (Exception e) {
             // 에러 발생 시 로그만 남기고 넘김

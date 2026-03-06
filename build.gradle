@@ -57,6 +57,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
+    // Protocol Buffers runtime (Kafka message serialization/deserialization)
+    implementation 'com.google.protobuf:protobuf-java:3.25.5'
+
     // Monitoring & Observability - OpenTelemetry (traces, logs)
     implementation 'io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter'
     implementation 'io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0'
