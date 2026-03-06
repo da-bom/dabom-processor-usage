@@ -21,7 +21,6 @@ import lombok.extern.slf4j.Slf4j;
 public class UsageEventsConsumer {
 
     private static final String GROUP = "dabom-processor-usage-main-group";
-    private static final String EVENT_TYPE = "DATA_USAGE";
 
     private final ObjectMapper objectMapper;
     private final UsageSyncService usageSyncService;
