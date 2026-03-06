@@ -12,12 +12,7 @@ public final class KafkaMetricTagSanitizer {
     private static final String USAGE_REALTIME = "USAGE_REALTIME";
 
     private static final Set<String> ALLOWED_EVENT_TYPES =
-            Set.of(
-                    DATA_USAGE,
-                    POLICY_UPDATED,
-                    USAGE_PERSIST,
-                    NOTIFICATION,
-                    USAGE_REALTIME);
+            Set.of(DATA_USAGE, POLICY_UPDATED, USAGE_PERSIST, NOTIFICATION, USAGE_REALTIME);
 
     private KafkaMetricTagSanitizer() {}
 

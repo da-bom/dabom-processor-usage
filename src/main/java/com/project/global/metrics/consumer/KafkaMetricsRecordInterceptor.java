@@ -5,7 +5,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 
-import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Headers;
@@ -20,6 +19,7 @@ import com.project.global.metrics.KafkaMetricTagSanitizer;
 import com.project.global.metrics.KafkaMetrics;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Component
