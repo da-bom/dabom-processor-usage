@@ -1,5 +1,6 @@
 package com.project.domain.usage.infra.messaging;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -28,6 +29,7 @@ import com.project.domain.usage.service.UsageSyncService;
 import com.project.domain.usage.service.helper.UsageEventValidator;
 import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.usage.UsagePayload;
+import com.project.global.kafka.error.KafkaMessageProcessingException;
 import com.project.global.util.LogSanitizer;
 
 @ExtendWith(MockitoExtension.class)
@@ -115,7 +117,7 @@ class UsageEventsConsumerTest {
                 .willThrow(new RuntimeException("JSON Error"));
 
         // when
-        consumer.consume(consumerRecord);
+        assertThrows(KafkaMessageProcessingException.class, () -> consumer.consume(consumerRecord));
 
         // then
         verify(usageSyncService, never()).syncUsage(any(), any(), any());
