@@ -191,10 +191,13 @@ family.addMember(customerId)
 
 ### 이벤트 (Kafka)
 
-- 이벤트 발행 인터페이스(`EventPublisher`)와 구현체(`KafkaProducer`)는 `infra/messaging/`에 위치한다.
-- Consumer는 데이터 파싱 후 **Service로 즉시 위임**한다. Consumer에 비즈니스 로직을 두지 않는다.
-- 공유 이벤트 Payload DTO는 `global/event/dto/`에 위치한다.
-- Kafka/Redis Config는 `global/config/`에 위치한다.
+- Kafka Consumer와 서비스별 메시징 어댑터는 `domain/{feature}/infra/messaging/`에 위치한다.
+- Consumer는 메시지를 수신한 뒤 공통 지원 객체를 통해 파싱하고, Service로 즉시 위임한다. Consumer에 비즈니스 로직을 두지 않는다.
+- 공통 이벤트 계약 DTO와 Kafka 지원 타입은 `lib-kafka` 라이브러리(`com.dabom.messaging.kafka...`)를 사용한다.
+- topic / eventType / consumer group / notification subType 문자열은 서비스 로컬 상수 대신 라이브러리 계약 상수를 사용한다.
+- Notification subtype 매핑은 서비스에서 직접 `switch`로 계산하지 않고, `NotificationEventSupport`를 사용한다.
+- 공통 Kafka 설정은 라이브러리 기본 설정을 우선 사용하고, 서비스 전용 설정이 필요하면 별도 이름의 Bean으로 확장한다.
+- 서비스 전용 Kafka 설정 클래스는 `domain/{feature}/infra/messaging/config/`에 위치한다.
 
 ### 캐시 (Redis)
 
