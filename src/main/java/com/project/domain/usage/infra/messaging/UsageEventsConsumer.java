@@ -56,7 +56,7 @@ public class UsageEventsConsumer implements KafkaEventConsumer<UsagePayload> {
                     "Invalid usage event. Key: {}, EventId: {}",
                     logSanitizer.sanitize(recordKey),
                     logSanitizer.sanitize(eventId));
-            throw new IllegalArgumentException("Invalid usage payload. eventId=" + eventId);
+            throw new IllegalArgumentException("Invalid usage payload. eventId=" + logSanitizer.sanitize(eventId));
         }
 
         log.debug(
