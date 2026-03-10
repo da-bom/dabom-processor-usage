@@ -81,7 +81,7 @@ public class UsageEventPublisher {
                     KafkaTopics.NOTIFICATION,
                     NotificationEventSupport.toEnvelope(
                             new ThresholdAlertPayload(
-                                    familyId, percent, "가족 데이터가 " + percent + "% 미만입니다.")));
+                                    familyId, percent, String.format("가족 데이터가 %d%% 미만입니다.", percent))));
 
         } else if (!status.startsWith(STATUS_NORMAL_PREFIX)) {
             kafkaEventPublisher.publish(
