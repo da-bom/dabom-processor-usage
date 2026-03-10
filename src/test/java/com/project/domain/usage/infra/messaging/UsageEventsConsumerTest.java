@@ -88,7 +88,7 @@ class UsageEventsConsumerTest {
     }
 
     @Test
-    @DisplayName("consume는 유효하지 않은 payload면 sync를 건너뛴다")
+    @DisplayName("consume는 유효하지 않은 payload면 예외를 던진다")
     void consume_InvalidPayload() {
         String json = "{\"eventId\":\"evt_invalid\", ...}";
         ConsumerRecord<String, String> consumerRecord =
@@ -112,7 +112,7 @@ class UsageEventsConsumerTest {
 
         given(validator.isValid(any(UsagePayload.class), anyString())).willReturn(false);
 
-        consumer.consume(consumerRecord);
+        assertThrows(IllegalArgumentException.class, () -> consumer.consume(consumerRecord));
 
         verify(usageSyncService, never()).syncUsage(any(), any(), any());
     }

@@ -53,10 +53,10 @@ public class UsageEventsConsumer implements KafkaEventConsumer<UsagePayload> {
 
         if (!validator.isValid(payload, eventId)) {
             log.warn(
-                    "Skipping invalid usage event. Key: {}, EventId: {}",
+                    "Invalid usage event. Key: {}, EventId: {}",
                     logSanitizer.sanitize(recordKey),
                     logSanitizer.sanitize(eventId));
-            return;
+            throw new IllegalArgumentException("Invalid usage payload. eventId=" + eventId);
         }
 
         log.debug(
