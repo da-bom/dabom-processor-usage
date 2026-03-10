@@ -4,12 +4,16 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
+import com.dabom.messaging.kafka.contract.KafkaConsumerGroups;
+import com.dabom.messaging.kafka.contract.KafkaEventTypes;
+import com.dabom.messaging.kafka.contract.KafkaTopics;
+import com.dabom.messaging.kafka.event.KafkaEventMessageSupport;
+import com.dabom.messaging.kafka.event.consumer.KafkaEventConsumer;
+import com.dabom.messaging.kafka.event.dto.EventEnvelope;
+import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.project.domain.usage.service.UsageSyncService;
 import com.project.domain.usage.service.helper.UsageEventValidator;
-import com.project.global.event.KafkaEventMessageSupport;
-import com.project.global.event.dto.EventEnvelope;
-import com.project.global.event.dto.usage.UsagePayload;
 import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;
@@ -18,23 +22,32 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class UsageEventsConsumer {
-
-    private static final String GROUP = "dabom-processor-usage-main-group";
-    private static final String EVENT_TYPE = "DATA_USAGE";
+public class UsageEventsConsumer implements KafkaEventConsumer<UsagePayload> {
 
     private final KafkaEventMessageSupport kafkaEventMessageSupport;
     private final UsageSyncService usageSyncService;
     private final UsageEventValidator validator;
     private final LogSanitizer logSanitizer;
 
-    @KafkaListener(topics = "usage-events", groupId = GROUP)
+    @KafkaListener(
+            topics = KafkaTopics.USAGE_EVENTS,
+            groupId = KafkaConsumerGroups.DABOM_PROCESSOR_USAGE_MAIN)
     public void consume(ConsumerRecord<String, String> consumerRecord) {
-        kafkaEventMessageSupport.consumeByEventType(
-                consumerRecord, EVENT_TYPE, new TypeReference<>() {}, this::handleUsageEvent);
+        consume(consumerRecord, kafkaEventMessageSupport);
     }
 
-    private void handleUsageEvent(EventEnvelope<UsagePayload> envelope, String recordKey) {
+    @Override
+    public String eventType() {
+        return KafkaEventTypes.DATA_USAGE;
+    }
+
+    @Override
+    public TypeReference<EventEnvelope<UsagePayload>> typeReference() {
+        return new TypeReference<>() {};
+    }
+
+    @Override
+    public void handle(EventEnvelope<UsagePayload> envelope, String recordKey) {
         String eventId = envelope.eventId();
         UsagePayload payload = envelope.payload();
 
