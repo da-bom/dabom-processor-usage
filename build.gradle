@@ -41,6 +41,7 @@ configurations {
 
 repositories {
     mavenCentral()
+    maven { url 'https://jitpack.io' }
 }
 
 // OpenTelemetry BOM for consistent versions
@@ -76,6 +77,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     runtimeOnly 'com.mysql:mysql-connector-j'
     implementation 'org.springframework.kafka:spring-kafka'
+    implementation 'com.github.da-bom:lib-kafka:v0.3.0'
 
     // QueryDSL
     implementation 'com.querydsl:querydsl-jpa:5.1.0:jakarta'

@@ -3,6 +3,7 @@ package com.project.domain.usage.infra.messaging;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
+import com.project.global.event.KafkaEventMessageSupport;
 import com.project.global.event.dto.EventEnvelope;
 import com.project.global.event.dto.notification.CustomerBlockedPayload;
 import com.project.global.event.dto.notification.NotificationPayload;
@@ -17,8 +18,11 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class NotificationKafkaProducer implements NotificationEventPublisher {
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final KafkaTemplate<String, String> kafkaTemplate;
+    private final KafkaEventMessageSupport kafkaEventMessageSupport;
+
     private static final String TOPIC = "notification-events";
+    private static final String EVENT_TYPE = "NOTIFICATION";
 
     public void publish(NotificationPayload payload) {
 
@@ -30,10 +34,10 @@ public class NotificationKafkaProducer implements NotificationEventPublisher {
                 };
 
         EventEnvelope<NotificationPayload> envelope =
-                EventEnvelope.of("NOTIFICATION", subType, payload);
+                EventEnvelope.of(EVENT_TYPE, subType, payload);
 
-        kafkaTemplate.send(TOPIC, envelope);
+        kafkaTemplate.send(TOPIC, kafkaEventMessageSupport.serialize(envelope));
 
-        log.info("Published Notification event: {} (Type: {})", envelope.eventId(), subType);
+        log.info("Published Notification event: {} (subType: {})", envelope.eventId(), subType);
     }
 }
