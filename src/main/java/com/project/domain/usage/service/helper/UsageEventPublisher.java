@@ -2,15 +2,16 @@ package com.project.domain.usage.service.helper;
 
 import org.springframework.stereotype.Component;
 
-import com.project.domain.usage.infra.messaging.NotificationEventPublisher;
-import com.project.domain.usage.infra.messaging.UsagePersistEventPublisher;
-import com.project.domain.usage.infra.messaging.UsageRealtimeEventPublisher;
+import com.dabom.messaging.kafka.contract.KafkaEventTypes;
+import com.dabom.messaging.kafka.contract.KafkaTopics;
+import com.dabom.messaging.kafka.event.dto.notification.CustomerBlockedPayload;
+import com.dabom.messaging.kafka.event.dto.notification.NotificationEventSupport;
+import com.dabom.messaging.kafka.event.dto.notification.ThresholdAlertPayload;
+import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
+import com.dabom.messaging.kafka.event.dto.usage.UsagePersistPayload;
+import com.dabom.messaging.kafka.event.dto.usage.UsageRealtimePayload;
+import com.dabom.messaging.kafka.event.publisher.KafkaEventPublisher;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
-import com.project.global.event.dto.notification.CustomerBlockedPayload;
-import com.project.global.event.dto.notification.ThresholdAlertPayload;
-import com.project.global.event.dto.usage.UsagePayload;
-import com.project.global.event.dto.usage.UsagePersistPayload;
-import com.project.global.event.dto.usage.UsageRealtimePayload;
 
 import lombok.RequiredArgsConstructor;
 
@@ -22,10 +23,7 @@ public class UsageEventPublisher {
     private static final String STATUS_NORMAL_PREFIX = "NORMAL";
     private static final String PERSIST_STATUS_ALLOWED = "ALLOWED";
 
-    // Producers
-    private final UsagePersistEventPublisher usagePersistEventPublisher;
-    private final UsageRealtimeEventPublisher usageRealtimeEventPublisher;
-    private final NotificationEventPublisher notificationEventPublisher;
+    private final KafkaEventPublisher kafkaEventPublisher;
 
     public void publish(UsageEventContext ctx) {
 
@@ -45,8 +43,10 @@ public class UsageEventPublisher {
         long totalLimit = totalUsed + remaining;
         double usedPercent = totalLimit > 0 ? (double) totalUsed / totalLimit * 100.0 : 0.0;
 
-        // DB 저장 이벤트 (Persist)
-        usagePersistEventPublisher.publish(
+        // DB 저장용 이벤트(Persist)
+        kafkaEventPublisher.publish(
+                KafkaTopics.USAGE_PERSIST,
+                KafkaEventTypes.USAGE_PERSIST,
                 new UsagePersistPayload(
                         ctx.eventId(),
                         familyId,
@@ -59,8 +59,10 @@ public class UsageEventPublisher {
                                 : status,
                         ctx.eventTime()));
 
-        // 실시간 사용량 이벤트 (Realtime)
-        usageRealtimeEventPublisher.publish(
+        // 실시간 사용량 이벤트(Realtime)
+        kafkaEventPublisher.publish(
+                KafkaTopics.USAGE_REALTIME,
+                KafkaEventTypes.USAGE_REALTIME,
                 new UsageRealtimePayload(
                         familyId,
                         customerId,
@@ -72,21 +74,25 @@ public class UsageEventPublisher {
                         userRatio * 100.0,
                         monthlyLimit));
 
-        // 알림 이벤트 (Notification)
+        // 알림 이벤트(Notification)
         if (status.startsWith(STATUS_WARNING_PREFIX)) {
             int percent = parsePercent(status);
-            notificationEventPublisher.publish(
-                    new ThresholdAlertPayload(
-                            familyId, percent, "가족 데이터가 " + percent + "% 미만입니다!"));
+            kafkaEventPublisher.publish(
+                    KafkaTopics.NOTIFICATION,
+                    NotificationEventSupport.toEnvelope(
+                            new ThresholdAlertPayload(
+                                    familyId, percent, "가족 데이터가 " + percent + "% 미만입니다.")));
 
         } else if (!status.startsWith(STATUS_NORMAL_PREFIX)) {
-            // reason: TIME_BLOCK, MONTHLY_LIMIT_EXCEEDED, FAMILY_QUOTA_EXCEEDED
-            notificationEventPublisher.publish(
-                    new CustomerBlockedPayload(familyId, customerId, status, ctx.eventTime()));
+            kafkaEventPublisher.publish(
+                    KafkaTopics.NOTIFICATION,
+                    NotificationEventSupport.toEnvelope(
+                            new CustomerBlockedPayload(
+                                    familyId, customerId, status, ctx.eventTime())));
         }
     }
 
-    // 임계치 판정
+    // 경계치 계산
     private int parsePercent(String status) {
         // "WARNING_10" -> 10
         try {
