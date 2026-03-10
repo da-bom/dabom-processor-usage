@@ -26,12 +26,13 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.dabom.messaging.kafka.contract.KafkaEventTypes;
+import com.dabom.messaging.kafka.event.dto.EventEnvelope;
+import com.dabom.messaging.kafka.event.dto.policy.PolicyUpdatedPayload;
 import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.policy.constant.PolicyConstraintKeyConstants;
 import com.project.domain.policy.service.helper.PolicyConstraintEventMapper;
 import com.project.domain.policy.service.helper.PolicyEventValidator;
-import com.project.global.event.dto.EventEnvelope;
-import com.project.global.event.dto.policy.PolicyUpdatedPayload;
 import com.project.global.util.LogSanitizer;
 import com.project.global.util.RedisKeyGenerator;
 
@@ -67,7 +68,12 @@ class PolicyConstraintSyncServiceImplTest {
                 new PolicyUpdatedPayload(
                         10L, 20L, PolicyConstraintKeyConstants.LIMIT_DATA_MONTHLY, "1024", true);
         EventEnvelope<PolicyUpdatedPayload> envelope =
-                new EventEnvelope<>("evt-1", "POLICY_UPDATED", null, LocalDateTime.now(), payload);
+                new EventEnvelope<>(
+                        "evt-1",
+                        KafkaEventTypes.POLICY_UPDATED,
+                        null,
+                        LocalDateTime.now(),
+                        payload);
 
         given(policyEventValidator.isValidPayload(payload, "evt-1", "record-1")).willReturn(true);
         given(
@@ -98,7 +104,12 @@ class PolicyConstraintSyncServiceImplTest {
                 new PolicyUpdatedPayload(
                         10L, 20L, PolicyConstraintKeyConstants.LIMIT_DATA_MONTHLY, "1024", true);
         EventEnvelope<PolicyUpdatedPayload> envelope =
-                new EventEnvelope<>("evt-2", "POLICY_UPDATED", null, LocalDateTime.now(), payload);
+                new EventEnvelope<>(
+                        "evt-2",
+                        KafkaEventTypes.POLICY_UPDATED,
+                        null,
+                        LocalDateTime.now(),
+                        payload);
 
         given(policyEventValidator.isValidPayload(payload, "evt-2", "record-2")).willReturn(true);
         given(
@@ -144,7 +155,12 @@ class PolicyConstraintSyncServiceImplTest {
                         "[\"app1\",\"app2\"]",
                         true);
         EventEnvelope<PolicyUpdatedPayload> envelope =
-                new EventEnvelope<>("evt-3", "POLICY_UPDATED", null, LocalDateTime.now(), payload);
+                new EventEnvelope<>(
+                        "evt-3",
+                        KafkaEventTypes.POLICY_UPDATED,
+                        null,
+                        LocalDateTime.now(),
+                        payload);
 
         given(policyEventValidator.isValidPayload(payload, "evt-3", "record-3")).willReturn(true);
         given(policyEventValidator.isAllowedPolicyKey(PolicyConstraintKeyConstants.BLOCK_APP))

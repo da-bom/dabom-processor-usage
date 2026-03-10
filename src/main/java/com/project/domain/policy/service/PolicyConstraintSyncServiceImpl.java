@@ -11,13 +11,13 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
+import com.dabom.messaging.kafka.event.dto.EventEnvelope;
+import com.dabom.messaging.kafka.event.dto.policy.PolicyUpdatedPayload;
 import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.policy.constant.PolicyConstraintKeyConstants;
 import com.project.domain.policy.service.helper.PolicyConstraintEventMapper;
 import com.project.domain.policy.service.helper.PolicyEventValidator;
 import com.project.global.common.TimeConstants;
-import com.project.global.event.dto.EventEnvelope;
-import com.project.global.event.dto.policy.PolicyUpdatedPayload;
 import com.project.global.exception.ApplicationException;
 import com.project.global.exception.code.PolicyErrorCode;
 import com.project.global.util.LogSanitizer;

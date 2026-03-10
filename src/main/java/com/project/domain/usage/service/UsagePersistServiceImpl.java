@@ -7,6 +7,8 @@ import java.time.format.DateTimeParseException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dabom.messaging.kafka.event.dto.EventEnvelope;
+import com.dabom.messaging.kafka.event.dto.usage.UsagePersistPayload;
 import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.usage.enums.UsagePersistProcessResult;
 import com.project.domain.usage.service.helper.CustomerQuotaWriter;
@@ -14,8 +16,6 @@ import com.project.domain.usage.service.helper.FamilyUsageWriter;
 import com.project.domain.usage.service.helper.UsagePersistEventValidator;
 import com.project.domain.usage.service.helper.UsageRecordWriter;
 import com.project.global.common.TimeConstants;
-import com.project.global.event.dto.EventEnvelope;
-import com.project.global.event.dto.usage.UsagePersistPayload;
 import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;

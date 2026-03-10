@@ -2,8 +2,8 @@ package com.project.domain.usage.service.helper;
 
 import org.springframework.stereotype.Component;
 
+import com.dabom.messaging.kafka.event.dto.usage.UsagePersistPayload;
 import com.project.domain.usage.enums.UsagePersistProcessResult;
-import com.project.global.event.dto.usage.UsagePersistPayload;
 import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;
