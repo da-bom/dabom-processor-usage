@@ -2,7 +2,6 @@ package com.project.domain.usage.infra.messaging;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -41,7 +40,7 @@ class UsagePersistKafkaProducerTest {
         producer.publish(payload);
 
         verify(kafkaEventMessageSupport).serialize(any(EventEnvelope.class));
-        verify(kafkaTemplate).send(eq("usage-persist"), eq("serialized"));
+        verify(kafkaTemplate).send("usage-persist", "serialized");
     }
 
     @Test
