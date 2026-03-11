@@ -2,8 +2,8 @@ package com.project.domain.policy.service.helper;
 
 import org.springframework.stereotype.Component;
 
+import com.dabom.messaging.kafka.event.dto.policy.PolicyUpdatedPayload;
 import com.project.domain.policy.constant.PolicyConstraintKeyConstants;
-import com.project.global.event.dto.policy.PolicyUpdatedPayload;
 
 import lombok.extern.slf4j.Slf4j;
 

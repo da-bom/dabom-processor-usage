@@ -2,7 +2,7 @@ package com.project.domain.usage.service.helper;
 
 import org.springframework.stereotype.Component;
 
-import com.project.global.event.dto.usage.UsagePayload;
+import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
 
 import lombok.extern.slf4j.Slf4j;
 

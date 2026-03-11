@@ -2,6 +2,7 @@ package com.project.domain.usage.service.helper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -16,26 +17,25 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.project.domain.usage.infra.messaging.NotificationEventPublisher;
-import com.project.domain.usage.infra.messaging.UsagePersistEventPublisher;
-import com.project.domain.usage.infra.messaging.UsageRealtimeEventPublisher;
+import com.dabom.messaging.kafka.contract.KafkaEventTypes;
+import com.dabom.messaging.kafka.contract.KafkaTopics;
+import com.dabom.messaging.kafka.event.dto.EventEnvelope;
+import com.dabom.messaging.kafka.event.dto.notification.NotificationPayload;
+import com.dabom.messaging.kafka.event.dto.notification.NotificationSubTypes;
+import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
+import com.dabom.messaging.kafka.event.dto.usage.UsagePersistPayload;
+import com.dabom.messaging.kafka.event.publisher.KafkaEventPublisher;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
-import com.project.global.event.dto.notification.CustomerBlockedPayload;
-import com.project.global.event.dto.notification.ThresholdAlertPayload;
-import com.project.global.event.dto.usage.UsagePayload;
-import com.project.global.event.dto.usage.UsagePersistPayload;
 
 @ExtendWith(MockitoExtension.class)
 class UsageEventPublisherTest {
 
     @InjectMocks private UsageEventPublisher usageEventPublisher;
 
-    @Mock private UsagePersistEventPublisher persistProducer;
-    @Mock private UsageRealtimeEventPublisher realtimeProducer;
-    @Mock private NotificationEventPublisher notificationProducer;
+    @Mock private KafkaEventPublisher kafkaEventPublisher;
 
     @Test
-    @DisplayName("NORMAL 상태면 persist는 ALLOWED로 발행하고 차단/임계 알림은 발행하지 않는다")
+    @DisplayName("NORMAL 상태면 persist를 ALLOWED로 발행하고 알림은 발행하지 않는다")
     void publish_Normal() {
         UsagePayload payload = new UsagePayload(100L, 1L, "app", 1024L, Map.of());
         UsageUpdateResult result =
@@ -48,10 +48,16 @@ class UsageEventPublisherTest {
 
         ArgumentCaptor<UsagePersistPayload> persistCaptor =
                 ArgumentCaptor.forClass(UsagePersistPayload.class);
-        verify(persistProducer, times(1)).publish(persistCaptor.capture());
-        verify(realtimeProducer, times(1)).publish(any());
-        verify(notificationProducer, never()).publish(any(ThresholdAlertPayload.class));
-        verify(notificationProducer, never()).publish(any(CustomerBlockedPayload.class));
+
+        verify(kafkaEventPublisher, times(1))
+                .publish(
+                        eq(KafkaTopics.USAGE_PERSIST),
+                        eq(KafkaEventTypes.USAGE_PERSIST),
+                        persistCaptor.capture());
+        verify(kafkaEventPublisher, times(1))
+                .publish(eq(KafkaTopics.USAGE_REALTIME), eq(KafkaEventTypes.USAGE_REALTIME), any());
+        verify(kafkaEventPublisher, never())
+                .publish(eq(KafkaTopics.NOTIFICATION), any(EventEnvelope.class));
 
         assertEquals("ALLOWED", persistCaptor.getValue().processResult());
     }
@@ -68,7 +74,16 @@ class UsageEventPublisherTest {
 
         usageEventPublisher.publish(ctx);
 
-        verify(notificationProducer, times(1)).publish(any(ThresholdAlertPayload.class));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<EventEnvelope<NotificationPayload>> envelopeCaptor =
+                ArgumentCaptor.forClass((Class) EventEnvelope.class);
+
+        verify(kafkaEventPublisher, times(1))
+                .publish(eq(KafkaTopics.NOTIFICATION), envelopeCaptor.capture());
+
+        EventEnvelope<NotificationPayload> envelope = envelopeCaptor.getValue();
+        assertEquals(KafkaEventTypes.NOTIFICATION, envelope.eventType());
+        assertEquals(NotificationSubTypes.THRESHOLD_ALERT, envelope.subType());
     }
 
     @Test
@@ -83,6 +98,13 @@ class UsageEventPublisherTest {
 
         usageEventPublisher.publish(ctx);
 
-        verify(notificationProducer, times(1)).publish(any(CustomerBlockedPayload.class));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<EventEnvelope<NotificationPayload>> envelopeCaptor =
+                ArgumentCaptor.forClass((Class) EventEnvelope.class);
+
+        verify(kafkaEventPublisher, times(1))
+                .publish(eq(KafkaTopics.NOTIFICATION), envelopeCaptor.capture());
+
+        assertEquals(NotificationSubTypes.CUSTOMER_BLOCKED, envelopeCaptor.getValue().subType());
     }
 }

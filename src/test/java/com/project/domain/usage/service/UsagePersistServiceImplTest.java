@@ -19,13 +19,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dabom.messaging.kafka.contract.KafkaEventTypes;
+import com.dabom.messaging.kafka.event.dto.EventEnvelope;
+import com.dabom.messaging.kafka.event.dto.usage.UsagePersistPayload;
 import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.usage.service.helper.CustomerQuotaWriter;
 import com.project.domain.usage.service.helper.FamilyUsageWriter;
 import com.project.domain.usage.service.helper.UsagePersistEventValidator;
 import com.project.domain.usage.service.helper.UsageRecordWriter;
-import com.project.global.event.dto.EventEnvelope;
-import com.project.global.event.dto.usage.UsagePersistPayload;
 import com.project.global.util.LogSanitizer;
 
 @ExtendWith(MockitoExtension.class)
@@ -58,7 +59,8 @@ class UsagePersistServiceImplTest {
                 new UsagePersistPayload(
                         "origin_1", 100L, 1L, 2048L, "app", "ALLOWED", "2026-03-15T01:02:03");
         EventEnvelope<UsagePersistPayload> envelope =
-                new EventEnvelope<>("evt_1", "USAGE_PERSIST", null, LocalDateTime.now(), payload);
+                new EventEnvelope<>(
+                        "evt_1", KafkaEventTypes.USAGE_PERSIST, null, LocalDateTime.now(), payload);
         LocalDate eventMonth = LocalDate.of(2026, 3, 1);
 
         given(usagePersistEventValidator.isValidPayload(payload, "evt_1", "recordKey"))
@@ -83,7 +85,8 @@ class UsagePersistServiceImplTest {
                 new UsagePersistPayload(
                         "origin_2", 200L, 2L, 1024L, "app", "TIME_BLOCK", "2026-03-20T10:20:30");
         EventEnvelope<UsagePersistPayload> envelope =
-                new EventEnvelope<>("evt_2", "USAGE_PERSIST", null, LocalDateTime.now(), payload);
+                new EventEnvelope<>(
+                        "evt_2", KafkaEventTypes.USAGE_PERSIST, null, LocalDateTime.now(), payload);
         LocalDate eventMonth = LocalDate.of(2026, 3, 1);
 
         given(usagePersistEventValidator.isValidPayload(payload, "evt_2", "recordKey"))

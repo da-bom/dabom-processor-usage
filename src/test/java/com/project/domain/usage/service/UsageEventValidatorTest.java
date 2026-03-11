@@ -7,8 +7,8 @@ import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
 import com.project.domain.usage.service.helper.UsageEventValidator;
-import com.project.global.event.dto.usage.UsagePayload;
 
 class UsageEventValidatorTest {
 

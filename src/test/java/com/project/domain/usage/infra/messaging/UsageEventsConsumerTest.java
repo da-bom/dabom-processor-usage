@@ -25,12 +25,13 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dabom.messaging.kafka.contract.KafkaEventTypes;
+import com.dabom.messaging.kafka.error.KafkaMessageProcessingException;
+import com.dabom.messaging.kafka.event.KafkaEventMessageSupport;
+import com.dabom.messaging.kafka.event.dto.EventEnvelope;
+import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
 import com.project.domain.usage.service.UsageSyncService;
 import com.project.domain.usage.service.helper.UsageEventValidator;
-import com.project.global.event.KafkaEventMessageSupport;
-import com.project.global.event.dto.EventEnvelope;
-import com.project.global.event.dto.usage.UsagePayload;
-import com.project.global.kafka.error.KafkaMessageProcessingException;
 import com.project.global.util.LogSanitizer;
 
 @ExtendWith(MockitoExtension.class)
@@ -55,14 +56,16 @@ class UsageEventsConsumerTest {
     }
 
     @Test
-    @DisplayName("consume calls sync service for a valid usage event")
+    @DisplayName("consume는 유효한 usage 이벤트를 sync 서비스로 전달한다")
     void consume_ValidMessage() {
         String json = "{\"eventId\":\"evt_1\", ...}";
         ConsumerRecord<String, String> consumerRecord =
                 new ConsumerRecord<>("topic", 0, 0L, "key", json);
 
         EventEnvelope<UsagePayload> envelope =
-                EventEnvelope.of("DATA_USAGE", new UsagePayload(100L, 1L, "app", 100L, Map.of()));
+                EventEnvelope.of(
+                        KafkaEventTypes.DATA_USAGE,
+                        new UsagePayload(100L, 1L, "app", 100L, Map.of()));
 
         doAnswer(
                         invocation -> {
@@ -73,7 +76,8 @@ class UsageEventsConsumerTest {
                             return null;
                         })
                 .when(kafkaEventMessageSupport)
-                .consumeByEventType(eq(consumerRecord), eq("DATA_USAGE"), any(), any());
+                .consumeByEventType(
+                        eq(consumerRecord), eq(KafkaEventTypes.DATA_USAGE), any(), any());
 
         given(validator.isValid(any(UsagePayload.class), anyString())).willReturn(true);
 
@@ -84,14 +88,15 @@ class UsageEventsConsumerTest {
     }
 
     @Test
-    @DisplayName("consume skips sync when the payload is invalid")
+    @DisplayName("consume는 유효하지 않은 payload면 예외를 던진다")
     void consume_InvalidPayload() {
         String json = "{\"eventId\":\"evt_invalid\", ...}";
         ConsumerRecord<String, String> consumerRecord =
                 new ConsumerRecord<>("topic", 0, 0L, "key", json);
 
         EventEnvelope<UsagePayload> envelope =
-                EventEnvelope.of("DATA_USAGE", new UsagePayload(null, null, null, null, null));
+                EventEnvelope.of(
+                        KafkaEventTypes.DATA_USAGE, new UsagePayload(null, null, null, null, null));
 
         doAnswer(
                         invocation -> {
@@ -102,17 +107,18 @@ class UsageEventsConsumerTest {
                             return null;
                         })
                 .when(kafkaEventMessageSupport)
-                .consumeByEventType(eq(consumerRecord), eq("DATA_USAGE"), any(), any());
+                .consumeByEventType(
+                        eq(consumerRecord), eq(KafkaEventTypes.DATA_USAGE), any(), any());
 
         given(validator.isValid(any(UsagePayload.class), anyString())).willReturn(false);
 
-        consumer.consume(consumerRecord);
+        assertThrows(IllegalArgumentException.class, () -> consumer.consume(consumerRecord));
 
         verify(usageSyncService, never()).syncUsage(any(), any(), any());
     }
 
     @Test
-    @DisplayName("consume rethrows processing exceptions from support")
+    @DisplayName("consume는 support의 처리 예외를 다시 던진다")
     void consume_DeserializationError() {
         String invalidJson = "invalid-json";
         ConsumerRecord<String, String> consumerRecord =
@@ -122,7 +128,8 @@ class UsageEventsConsumerTest {
                         new KafkaMessageProcessingException(
                                 "JSON Error", new RuntimeException("JSON Error")))
                 .when(kafkaEventMessageSupport)
-                .consumeByEventType(eq(consumerRecord), eq("DATA_USAGE"), any(), any());
+                .consumeByEventType(
+                        eq(consumerRecord), eq(KafkaEventTypes.DATA_USAGE), any(), any());
 
         assertThrows(KafkaMessageProcessingException.class, () -> consumer.consume(consumerRecord));
 

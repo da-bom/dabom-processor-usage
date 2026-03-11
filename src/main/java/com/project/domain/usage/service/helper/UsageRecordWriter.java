@@ -5,9 +5,9 @@ import java.time.format.DateTimeParseException;
 
 import org.springframework.stereotype.Service;
 
+import com.dabom.messaging.kafka.event.dto.usage.UsagePersistPayload;
 import com.project.domain.usage.repository.UsageRecordRepository;
 import com.project.global.common.TimeConstants;
-import com.project.global.event.dto.usage.UsagePersistPayload;
 import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;
