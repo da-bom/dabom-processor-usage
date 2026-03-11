@@ -1,6 +1,7 @@
 package com.project.domain.policy.infra.cache.dto;
 
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 
 import com.project.domain.policy.constant.PolicyConstraintKeyConstants;
@@ -32,7 +33,11 @@ public final class PolicyConstraintRedisHash {
     }
 
     public void putBlockedApp(String appId, long version) {
-        putWithVersion(PolicyConstraintKeyConstants.BLOCK_APP_PREFIX + appId, "1", version);
+        putWithVersion(
+                PolicyConstraintKeyConstants.BLOCK_APP_PREFIX
+                        + appId.trim().toLowerCase(Locale.ROOT),
+                "1",
+                version);
     }
 
     public Map<String, String> toMap() {

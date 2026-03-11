@@ -5,9 +5,11 @@
 -- KEYS[5]: family:{fid}:alert:THRESHOLD (prefix)
 -- ARGV[1]: usageBytes
 -- ARGV[2]: currentHHmm (e.g. 2230)
+-- ARGV[3]: normalizedAppId
 
 local usageBytes = tonumber(ARGV[1])
 local currentHHmm = tonumber(ARGV[2] or '0')
+local appId = ARGV[3] or ''
 
 -- 1. [Check] 개인 제약 조건 로딩
 local constraints_array = redis.call('HGETALL', KEYS[4])
@@ -36,6 +38,10 @@ end
 -- 1. [Block] 완전 차단 여부
 if constraints['BLOCK:ACCESS'] == "1" then
     return getResult("MANUAL", currentMonthly)
+end
+
+if appId ~= '' and constraints['BLOCK:APP:' .. appId] == "1" then
+    return getResult("APP_BLOCK", currentMonthly)
 end
 
 local blockStart = nil

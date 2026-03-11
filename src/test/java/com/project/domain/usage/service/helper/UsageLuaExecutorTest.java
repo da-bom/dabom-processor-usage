@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
 
 import java.util.List;
 
@@ -55,17 +56,27 @@ class UsageLuaExecutorTest {
                         "constraintsKey",
                         "alertsKey",
                         1024L,
-                        "2230");
+                        "2230",
+                        "com.youtube.app");
 
         given(
                         redisTemplate.execute(
                                 eq(usageUpdateScript),
                                 anyList(),
                                 any(Object.class),
+                                any(Object.class),
                                 any(Object.class)))
                 .willReturn(List.of(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L));
 
         UsageUpdateResult result = usageLuaExecutor.execute(command, "evt_1");
+
+        verify(redisTemplate)
+                .execute(
+                        eq(usageUpdateScript),
+                        anyList(),
+                        eq("1024"),
+                        eq("2230"),
+                        eq("com.youtube.app"));
 
         assertEquals(5000L, result.totalUsed());
         assertEquals(5000L, result.remaining());
@@ -79,11 +90,12 @@ class UsageLuaExecutorTest {
     @DisplayName("Lua 결과가 null이면 예외를 던진다")
     void execute_NullResult() {
         UsageLuaExecutor.UsageLuaCommand command =
-                new UsageLuaExecutor.UsageLuaCommand("a", "b", "c", "d", "e", 1L, "0000");
+                new UsageLuaExecutor.UsageLuaCommand("a", "b", "c", "d", "e", 1L, "0000", "");
         given(
                         redisTemplate.execute(
                                 eq(usageUpdateScript),
                                 anyList(),
+                                any(Object.class),
                                 any(Object.class),
                                 any(Object.class)))
                 .willReturn(null);
@@ -95,11 +107,12 @@ class UsageLuaExecutorTest {
     @DisplayName("Lua 결과 길이가 부족하면 예외를 던진다")
     void execute_InvalidResultSize() {
         UsageLuaExecutor.UsageLuaCommand command =
-                new UsageLuaExecutor.UsageLuaCommand("a", "b", "c", "d", "e", 1L, "0000");
+                new UsageLuaExecutor.UsageLuaCommand("a", "b", "c", "d", "e", 1L, "0000", "");
         given(
                         redisTemplate.execute(
                                 eq(usageUpdateScript),
                                 anyList(),
+                                any(Object.class),
                                 any(Object.class),
                                 any(Object.class)))
                 .willReturn(List.of(1L, 2L, "NORMAL"));
