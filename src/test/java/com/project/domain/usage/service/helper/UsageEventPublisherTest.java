@@ -107,4 +107,30 @@ class UsageEventPublisherTest {
 
         assertEquals(NotificationSubTypes.CUSTOMER_BLOCKED, envelopeCaptor.getValue().subType());
     }
+
+    @Test
+    @DisplayName("APP_BLOCK 상태면 persist와 realtime은 생략하고 차단 알림만 발행한다")
+    void publish_AppBlock_SkipsPersistAndRealtime() {
+        UsagePayload payload = new UsagePayload(100L, 1L, "app", 1024L, Map.of());
+        UsageUpdateResult result =
+                new UsageUpdateResult(8000L, 2000L, "APP_BLOCK", 10001L, 1.0, 10000L);
+        UsageEventPublisher.UsageEventContext ctx =
+                new UsageEventPublisher.UsageEventContext(
+                        "evt_4", "2026-02-24T12:00:00", payload, result);
+
+        usageEventPublisher.publish(ctx);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<EventEnvelope<NotificationPayload>> envelopeCaptor =
+                ArgumentCaptor.forClass((Class) EventEnvelope.class);
+
+        verify(kafkaEventPublisher, never())
+                .publish(eq(KafkaTopics.USAGE_PERSIST), eq(KafkaEventTypes.USAGE_PERSIST), any());
+        verify(kafkaEventPublisher, never())
+                .publish(eq(KafkaTopics.USAGE_REALTIME), eq(KafkaEventTypes.USAGE_REALTIME), any());
+        verify(kafkaEventPublisher, times(1))
+                .publish(eq(KafkaTopics.NOTIFICATION), envelopeCaptor.capture());
+
+        assertEquals(NotificationSubTypes.CUSTOMER_BLOCKED, envelopeCaptor.getValue().subType());
+    }
 }

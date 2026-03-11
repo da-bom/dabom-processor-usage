@@ -34,7 +34,8 @@ public class UsageLuaExecutor {
                                 command.constraintsKey(),
                                 command.alertsKey()),
                         String.valueOf(command.usageBytes()),
-                        command.currentHhmm());
+                        command.currentHhmm(),
+                        command.appId());
 
         if (result == null || result.isEmpty()) {
             log.error("Usage update script returned null. eventId={}", eventId);
@@ -79,5 +80,6 @@ public class UsageLuaExecutor {
             String constraintsKey,
             String alertsKey,
             long usageBytes,
-            String currentHhmm) {}
+            String currentHhmm,
+            String appId) {}
 }

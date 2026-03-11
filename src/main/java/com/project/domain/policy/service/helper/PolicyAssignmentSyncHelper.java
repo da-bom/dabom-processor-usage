@@ -2,6 +2,7 @@ package com.project.domain.policy.service.helper;
 
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -164,6 +165,7 @@ public class PolicyAssignmentSyncHelper {
 
         blockedApps.stream()
                 .map(String::valueOf)
+                .map(appId -> appId.trim().toLowerCase(Locale.ROOT))
                 .filter(appId -> !appId.isBlank())
                 .forEach(appId -> constraints.putBlockedApp(appId, assignmentVersion));
     }

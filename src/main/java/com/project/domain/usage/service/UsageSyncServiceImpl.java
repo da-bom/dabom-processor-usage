@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.Locale;
 
 import org.springframework.stereotype.Service;
 
@@ -26,6 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 public class UsageSyncServiceImpl implements UsageSyncService {
 
     private static final DateTimeFormatter HHMM_FORMATTER = DateTimeFormatter.ofPattern("HHmm");
+    private static final String EMPTY_APP_ID = "";
 
     private final RedisKeyGenerator redisKeyGenerator;
 
@@ -79,6 +81,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
         }
 
         String currentHhmm = resolvedEventDateTime.format(HHMM_FORMATTER);
+        String normalizedAppId = normalizeAppId(payload.appId());
 
         // Lua Script 실행 + 결과 파싱
         UsageUpdateResult parsed =
@@ -90,7 +93,8 @@ public class UsageSyncServiceImpl implements UsageSyncService {
                                 constraintsKey,
                                 alertsKey,
                                 usageBytes,
-                                currentHhmm),
+                                currentHhmm,
+                                normalizedAppId),
                         eventId);
         log.debug(
                 "Usage Synced: family={}, customer={}, status={}",
@@ -114,5 +118,14 @@ public class UsageSyncServiceImpl implements UsageSyncService {
         }
         // eventTime이 없거나 파싱 실패 시 서버 현재 시각으로 보정한다.
         return LocalDateTime.now(TimeConstants.ASIA_SEOUL);
+    }
+
+    private String normalizeAppId(String appId) {
+        if (appId == null) {
+            return EMPTY_APP_ID;
+        }
+
+        String normalized = appId.trim().toLowerCase(Locale.ROOT);
+        return normalized.isEmpty() ? EMPTY_APP_ID : normalized;
     }
 }

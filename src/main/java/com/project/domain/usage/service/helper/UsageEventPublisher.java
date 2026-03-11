@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class UsageEventPublisher {
 
+    private static final String STATUS_APP_BLOCK = "APP_BLOCK";
     private static final String STATUS_WARNING_PREFIX = "WARNING";
     private static final String STATUS_NORMAL_PREFIX = "NORMAL";
     private static final String PERSIST_STATUS_ALLOWED = "ALLOWED";
@@ -43,38 +44,37 @@ public class UsageEventPublisher {
         long totalLimit = totalUsed + remaining;
         double usedPercent = totalLimit > 0 ? (double) totalUsed / totalLimit * 100.0 : 0.0;
 
-        // DB 저장용 이벤트(Persist)
-        kafkaEventPublisher.publish(
-                KafkaTopics.USAGE_PERSIST,
-                KafkaEventTypes.USAGE_PERSIST,
-                new UsagePersistPayload(
-                        ctx.eventId(),
-                        familyId,
-                        customerId,
-                        payload.bytesUsed(),
-                        payload.appId(),
-                        status.startsWith(STATUS_WARNING_PREFIX)
-                                        || status.equals(STATUS_NORMAL_PREFIX)
-                                ? PERSIST_STATUS_ALLOWED
-                                : status,
-                        ctx.eventTime()));
+        if (!STATUS_APP_BLOCK.equals(status)) {
+            kafkaEventPublisher.publish(
+                    KafkaTopics.USAGE_PERSIST,
+                    KafkaEventTypes.USAGE_PERSIST,
+                    new UsagePersistPayload(
+                            ctx.eventId(),
+                            familyId,
+                            customerId,
+                            payload.bytesUsed(),
+                            payload.appId(),
+                            status.startsWith(STATUS_WARNING_PREFIX)
+                                            || status.equals(STATUS_NORMAL_PREFIX)
+                                    ? PERSIST_STATUS_ALLOWED
+                                    : status,
+                            ctx.eventTime()));
 
-        // 실시간 사용량 이벤트(Realtime)
-        kafkaEventPublisher.publish(
-                KafkaTopics.USAGE_REALTIME,
-                KafkaEventTypes.USAGE_REALTIME,
-                new UsageRealtimePayload(
-                        familyId,
-                        customerId,
-                        totalUsed,
-                        totalLimit,
-                        remaining,
-                        usedPercent,
-                        monthlyUsed,
-                        userRatio * 100.0,
-                        monthlyLimit));
+            kafkaEventPublisher.publish(
+                    KafkaTopics.USAGE_REALTIME,
+                    KafkaEventTypes.USAGE_REALTIME,
+                    new UsageRealtimePayload(
+                            familyId,
+                            customerId,
+                            totalUsed,
+                            totalLimit,
+                            remaining,
+                            usedPercent,
+                            monthlyUsed,
+                            userRatio * 100.0,
+                            monthlyLimit));
+        }
 
-        // 알림 이벤트(Notification)
         if (status.startsWith(STATUS_WARNING_PREFIX)) {
             int percent = parsePercent(status);
             kafkaEventPublisher.publish(
@@ -94,9 +94,7 @@ public class UsageEventPublisher {
         }
     }
 
-    // 경계치 계산
     private int parsePercent(String status) {
-        // "WARNING_10" -> 10
         try {
             return Integer.parseInt(status.split("_")[1]);
         } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
@@ -104,7 +102,6 @@ public class UsageEventPublisher {
         }
     }
 
-    // 이벤트 발행에 필요한 입력을 캡슐화한 내부 컨텍스트 객체
     public record UsageEventContext(
             String eventId, String eventTime, UsagePayload payload, UsageUpdateResult result) {}
 }

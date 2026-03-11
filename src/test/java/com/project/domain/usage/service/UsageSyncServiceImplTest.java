@@ -83,9 +83,31 @@ class UsageSyncServiceImplTest {
         assertEquals("alertsKey", command.alertsKey());
         assertEquals(1024L, command.usageBytes());
         assertEquals("1234", command.currentHhmm());
+        assertEquals("appid", command.appId());
 
         verify(usageEventPublisher, times(1))
                 .publish(any(UsageEventPublisher.UsageEventContext.class));
+    }
+
+    @Test
+    @DisplayName("appId는 Lua 전달 전에 소문자로 정규화한다")
+    void syncUsage_NormalizesAppIdBeforeLuaExecution() {
+        String eventId = "evt_3";
+        String eventTime = "2026-03-04T12:34:56";
+        LocalDate eventMonth = LocalDate.of(2026, 3, 1);
+        UsagePayload payload = new UsagePayload(100L, 1L, " Com.YouTube.App ", 1024L, Map.of());
+
+        stubCommon(100L, 1L, eventMonth);
+        given(usageLuaExecutor.execute(any(UsageLuaExecutor.UsageLuaCommand.class), eq(eventId)))
+                .willReturn(new UsageUpdateResult(5000L, 5000L, "APP_BLOCK", 1000L, 0.1, 10000L));
+
+        usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
+
+        ArgumentCaptor<UsageLuaExecutor.UsageLuaCommand> commandCaptor =
+                ArgumentCaptor.forClass(UsageLuaExecutor.UsageLuaCommand.class);
+        verify(usageLuaExecutor).execute(commandCaptor.capture(), eq(eventId));
+
+        assertEquals("com.youtube.app", commandCaptor.getValue().appId());
     }
 
     @Test
