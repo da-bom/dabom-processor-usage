@@ -165,8 +165,7 @@ class UsageSyncServiceImplTest {
         stubCommon(100L, 1L, eventMonth, eventId);
         given(usageLuaExecutor.execute(any(UsageLuaExecutor.UsageLuaCommand.class), eq(eventId)))
                 .willReturn(
-                        new UsageUpdateResult(
-                                5000L, 5000L, "DUPLICATE", 1000L, 0.1, 10000L, true));
+                        new UsageUpdateResult(5000L, 5000L, "DUPLICATE", 1000L, 0.1, 10000L, true));
 
         usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
 
