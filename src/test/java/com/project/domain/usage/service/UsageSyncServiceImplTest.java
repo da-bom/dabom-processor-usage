@@ -172,9 +172,9 @@ class UsageSyncServiceImplTest {
         verify(usageEventPublisher, never()).publish(any());
         verify(kafkaMetrics, times(1))
                 .incrementDedupHit(
-                        eq(KafkaTopics.USAGE_EVENTS),
-                        eq(KafkaConsumerGroups.DABOM_PROCESSOR_USAGE_MAIN),
-                        eq(KafkaEventTypes.DATA_USAGE));
+                        KafkaTopics.USAGE_EVENTS,
+                        KafkaConsumerGroups.DABOM_PROCESSOR_USAGE_MAIN,
+                        KafkaEventTypes.DATA_USAGE);
     }
 
     private void stubCommon(long familyId, long customerId, LocalDate eventMonth, String eventId) {
