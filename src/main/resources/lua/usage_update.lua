@@ -38,18 +38,8 @@ end
 if dedupTtlSeconds > 0 then
     local firstSeen = redis.call('SET', KEYS[6], '1', 'NX', 'EX', dedupTtlSeconds)
     if not firstSeen then
-        local duplicatedMonthly = tonumber(redis.call('GET', KEYS[3]) or '0')
-        local constraintsArrayOnDuplicate = redis.call('HGETALL', KEYS[4])
-        local constraintsOnDuplicate = {}
-        for i = 1, #constraintsArrayOnDuplicate, 2 do
-            constraintsOnDuplicate[constraintsArrayOnDuplicate[i]] =
-                    constraintsArrayOnDuplicate[i + 1]
-        end
-
-        local duplicatedLimitStr = constraintsOnDuplicate['LIMIT:DATA:MONTHLY']
-        if duplicatedLimitStr then monthlyLimit = tonumber(duplicatedLimitStr) end
-
-        return getResult("DUPLICATE", duplicatedMonthly, true)
+        -- duplicate면 Java에서 상세 수치를 사용하지 않으므로 고정값만 반환한다.
+        return {0, 0, "DUPLICATE", 0, 0, -1, 1}
     end
 end
 
