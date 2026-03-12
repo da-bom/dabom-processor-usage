@@ -3,51 +3,80 @@
 -- KEYS[3]: family:{fid}:customer:{uid}:usage:monthly:{yyyyMM}
 -- KEYS[4]: family:{fid}:customer:{uid}:constraints
 -- KEYS[5]: family:{fid}:alert:THRESHOLD (prefix)
+-- KEYS[6]: event:dedup:usage:{eventId}
 -- ARGV[1]: usageBytes
 -- ARGV[2]: currentHHmm (e.g. 2230)
 -- ARGV[3]: normalizedAppId
+-- ARGV[4]: dedupTtlSeconds
 
 local usageBytes = tonumber(ARGV[1])
 local currentHHmm = tonumber(ARGV[2] or '0')
 local appId = ARGV[3] or ''
-
--- 1. [Check] 개인 제약 조건 로딩
-local constraints_array = redis.call('HGETALL', KEYS[4])
-local constraints = {}
-for i = 1, #constraints_array, 2 do
-    constraints[constraints_array[i]] = constraints_array[i+1]
-end
-
-local monthlyLimitStr = constraints['LIMIT:DATA:MONTHLY']
+local dedupTtlSeconds = tonumber(ARGV[4] or '0')
 local monthlyLimit = -1
-if monthlyLimitStr then monthlyLimit = tonumber(monthlyLimitStr) end
 
-local currentMonthly = tonumber(redis.call('GET', KEYS[3]) or '0')
-
--- (공통 반환 함수)
-local function getResult(status, currentMonthlyUsed)
+-- 공통 반환 형식
+local function getResult(status, currentMonthlyUsed, duplicate)
     local totalLimit = tonumber(redis.call('HGET', KEYS[1], 'totalQuota') or '0')
     local currentRemaining = tonumber(redis.call('GET', KEYS[2]) or totalLimit)
     local totalUsed = totalLimit - currentRemaining
     local userRatio = 0
     if totalLimit > 0 then userRatio = currentMonthlyUsed / totalLimit end
 
-    return {totalUsed, currentRemaining, status, currentMonthlyUsed, userRatio, monthlyLimit}
+    return {
+        totalUsed,
+        currentRemaining,
+        status,
+        currentMonthlyUsed,
+        userRatio,
+        monthlyLimit,
+        duplicate and 1 or 0
+    }
 end
 
--- 1. [Block] 완전 차단 여부
+-- 1. usage-event dedup 검사
+if dedupTtlSeconds > 0 then
+    local firstSeen = redis.call('SET', KEYS[6], '1', 'NX', 'EX', dedupTtlSeconds)
+    if not firstSeen then
+        local duplicatedMonthly = tonumber(redis.call('GET', KEYS[3]) or '0')
+        local constraintsArrayOnDuplicate = redis.call('HGETALL', KEYS[4])
+        local constraintsOnDuplicate = {}
+        for i = 1, #constraintsArrayOnDuplicate, 2 do
+            constraintsOnDuplicate[constraintsArrayOnDuplicate[i]] =
+                    constraintsArrayOnDuplicate[i + 1]
+        end
+
+        local duplicatedLimitStr = constraintsOnDuplicate['LIMIT:DATA:MONTHLY']
+        if duplicatedLimitStr then monthlyLimit = tonumber(duplicatedLimitStr) end
+
+        return getResult("DUPLICATE", duplicatedMonthly, true)
+    end
+end
+
+-- 2. 고객 정책 제약 로딩
+local constraintsArray = redis.call('HGETALL', KEYS[4])
+local constraints = {}
+for i = 1, #constraintsArray, 2 do
+    constraints[constraintsArray[i]] = constraintsArray[i + 1]
+end
+
+local monthlyLimitStr = constraints['LIMIT:DATA:MONTHLY']
+if monthlyLimitStr then monthlyLimit = tonumber(monthlyLimitStr) end
+
+local currentMonthly = tonumber(redis.call('GET', KEYS[3]) or '0')
+
+-- 3. 차단/제한 조건 검사
 if constraints['BLOCK:ACCESS'] == "1" then
-    return getResult("MANUAL", currentMonthly)
+    return getResult("MANUAL", currentMonthly, false)
 end
 
 if appId ~= '' and constraints['BLOCK:APP:' .. appId] == "1" then
-    return getResult("APP_BLOCK", currentMonthly)
+    return getResult("APP_BLOCK", currentMonthly, false)
 end
 
 local blockStart = nil
 local blockEnd = nil
 
--- BLOCK:TIME = "HHMM-HHMM" 해당 포멧을 기준으로 파싱
 local blockTimeRange = constraints['BLOCK:TIME']
 if blockTimeRange then
     local dashPos = string.find(blockTimeRange, "-", 1, true)
@@ -59,32 +88,26 @@ if blockTimeRange then
     end
 end
 
--- 2. [Block] 시간 차단 여부
 if blockStart and blockEnd then
     if blockStart < blockEnd then
-        -- same-day window, e.g. 0900~1800
         if currentHHmm >= blockStart and currentHHmm < blockEnd then
-            return getResult("TIME_BLOCK", currentMonthly)
+            return getResult("TIME_BLOCK", currentMonthly, false)
         end
     elseif blockStart > blockEnd then
-        -- overnight window, e.g. 2200~0700
         if currentHHmm >= blockStart or currentHHmm < blockEnd then
-            return getResult("TIME_BLOCK", currentMonthly)
+            return getResult("TIME_BLOCK", currentMonthly, false)
         end
     else
-        -- start == end means full-day block
-        return getResult("TIME_BLOCK", currentMonthly)
+        return getResult("TIME_BLOCK", currentMonthly, false)
     end
 end
 
--- 3. [Limit] 개인 월간 한도 초과 여부
 if monthlyLimit ~= -1 then
     if (currentMonthly + usageBytes) > monthlyLimit then
-        return getResult("MONTHLY_LIMIT_EXCEEDED", currentMonthly)
+        return getResult("MONTHLY_LIMIT_EXCEEDED", currentMonthly, false)
     end
 end
 
--- 4. [Quota] 가족 잔여량 부족 여부
 local currentRemaining = tonumber(redis.call('GET', KEYS[2]))
 if currentRemaining == nil then
     local totalLimit = tonumber(redis.call('HGET', KEYS[1], 'totalQuota') or '0')
@@ -92,16 +115,14 @@ if currentRemaining == nil then
 end
 
 if currentRemaining < usageBytes then
-    return getResult("FAMILY_QUOTA_EXCEEDED", currentMonthly)
+    return getResult("FAMILY_QUOTA_EXCEEDED", currentMonthly, false)
 end
 
--- 5. 가족 잔여량 차감
+-- 4. 사용량 반영
 local newRemaining = redis.call('DECRBY', KEYS[2], usageBytes)
-
--- 6. 개인 월간 사용량 증가
 local newMonthly = redis.call('INCRBY', KEYS[3], usageBytes)
 
--- 7. [Result] 상태 결정
+-- 5. 경고 상태 계산
 local limitStr = redis.call('HGET', KEYS[1], 'totalQuota')
 local totalLimit = tonumber(limitStr or '0')
 local status = "NORMAL"
@@ -114,7 +135,6 @@ else
         ratio = newRemaining / totalLimit
     end
 
-    -- 현재 미도달 경고 중 가장 작은 임계
     local alertLevel = nil
     if ratio < 0.1 then
         alertLevel = "10"
@@ -127,25 +147,21 @@ else
         status = "WARNING_50"
     end
 
-    -- 경고 상태이면 중복 체크
+    -- 같은 임계치 알림은 한 번만 발행되게 보호
     if alertLevel then
         local alertKey = KEYS[5] .. ":" .. alertLevel
-        -- 이미 알림을 보냈는지 확인
         local isSent = redis.call('EXISTS', alertKey)
 
         if isSent == 1 then
-            -- 이미 보낸 레벨이면 상태를 NORMAL로 덮어씀
             status = "NORMAL"
         else
-            -- 아직 안보냈으면 알림 상태 기록 (PUBLISHED)
             redis.call('SET', alertKey, "PUBLISHED")
         end
     end
 end
 
--- 8. 최종 반환
 local totalUsed = totalLimit - newRemaining
 local userRatio = 0
 if totalLimit > 0 then userRatio = newMonthly / totalLimit end
 
-return {totalUsed, newRemaining, status, newMonthly, userRatio, monthlyLimit}
+return {totalUsed, newRemaining, status, newMonthly, userRatio, monthlyLimit, 0}
