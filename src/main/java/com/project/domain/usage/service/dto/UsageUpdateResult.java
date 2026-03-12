@@ -6,4 +6,6 @@ public record UsageUpdateResult(
         String status,
         long monthlyUsed,
         double userRatio,
-        long monthlyLimit) {}
+        long monthlyLimit,
+        // usage-event duplicate 여부
+        boolean duplicate) {}

@@ -21,8 +21,13 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import com.dabom.messaging.kafka.contract.KafkaConsumerGroups;
+import com.dabom.messaging.kafka.contract.KafkaEventTypes;
+import com.dabom.messaging.kafka.contract.KafkaTopics;
 import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
+import com.dabom.messaging.kafka.metrics.KafkaMetrics;
 import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
 import com.project.domain.usage.service.helper.UsageEventPublisher;
@@ -42,9 +47,11 @@ class UsageSyncServiceImplTest {
     @Mock private UsageLuaExecutor usageLuaExecutor;
     @Mock private UsageEventPublisher usageEventPublisher;
     @Mock private LogSanitizer logSanitizer;
+    @Mock private KafkaMetrics kafkaMetrics;
 
     @BeforeEach
     void setUp() {
+        ReflectionTestUtils.setField(usageSyncServiceImpl, "dedupTtlSeconds", 60L);
         lenient()
                 .when(logSanitizer.sanitize(nullable(String.class)))
                 .thenAnswer(
@@ -62,10 +69,10 @@ class UsageSyncServiceImplTest {
         LocalDate eventMonth = LocalDate.of(2026, 3, 1);
         UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
 
-        stubCommon(100L, 1L, eventMonth);
+        stubCommon(100L, 1L, eventMonth, eventId);
 
         UsageUpdateResult luaResult =
-                new UsageUpdateResult(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L);
+                new UsageUpdateResult(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L, false);
         given(usageLuaExecutor.execute(any(UsageLuaExecutor.UsageLuaCommand.class), eq(eventId)))
                 .willReturn(luaResult);
 
@@ -81,12 +88,15 @@ class UsageSyncServiceImplTest {
         assertEquals("monthlyKey", command.monthlyKey());
         assertEquals("constraintsKey", command.constraintsKey());
         assertEquals("alertsKey", command.alertsKey());
+        assertEquals("event:dedup:usage:evt_1", command.dedupKey());
         assertEquals(1024L, command.usageBytes());
         assertEquals("1234", command.currentHhmm());
         assertEquals("appid", command.appId());
+        assertEquals(60L, command.dedupTtlSeconds());
 
         verify(usageEventPublisher, times(1))
                 .publish(any(UsageEventPublisher.UsageEventContext.class));
+        verify(kafkaMetrics, never()).incrementDedupHit(any(), any(), any());
     }
 
     @Test
@@ -97,9 +107,11 @@ class UsageSyncServiceImplTest {
         LocalDate eventMonth = LocalDate.of(2026, 3, 1);
         UsagePayload payload = new UsagePayload(100L, 1L, " Com.YouTube.App ", 1024L, Map.of());
 
-        stubCommon(100L, 1L, eventMonth);
+        stubCommon(100L, 1L, eventMonth, eventId);
         given(usageLuaExecutor.execute(any(UsageLuaExecutor.UsageLuaCommand.class), eq(eventId)))
-                .willReturn(new UsageUpdateResult(5000L, 5000L, "APP_BLOCK", 1000L, 0.1, 10000L));
+                .willReturn(
+                        new UsageUpdateResult(
+                                5000L, 5000L, "APP_BLOCK", 1000L, 0.1, 10000L, false));
 
         usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
 
@@ -126,6 +138,8 @@ class UsageSyncServiceImplTest {
         given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L))
                 .willReturn("constraintsKey");
         given(redisKeyGenerator.generateFamilyAlertsKey(100L)).willReturn("alertsKey");
+        given(redisKeyGenerator.generateUsageEventDedupKey(eventId))
+                .willReturn("event:dedup:usage:" + eventId);
 
         given(usageRedisWarmupHelper.ensureFamilyInfoCached(100L, "family:100:info"))
                 .willReturn(false);
@@ -140,7 +154,30 @@ class UsageSyncServiceImplTest {
         verify(usageEventPublisher, never()).publish(any());
     }
 
-    private void stubCommon(long familyId, long customerId, LocalDate eventMonth) {
+    @Test
+    @DisplayName("중복 이벤트면 publish를 생략하고 dedup metric만 기록한다")
+    void syncUsage_DuplicateSkipsPublish() {
+        String eventId = "evt_dup";
+        String eventTime = "2026-03-04T12:34:56";
+        LocalDate eventMonth = LocalDate.of(2026, 3, 1);
+        UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
+
+        stubCommon(100L, 1L, eventMonth, eventId);
+        given(usageLuaExecutor.execute(any(UsageLuaExecutor.UsageLuaCommand.class), eq(eventId)))
+                .willReturn(
+                        new UsageUpdateResult(5000L, 5000L, "DUPLICATE", 1000L, 0.1, 10000L, true));
+
+        usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
+
+        verify(usageEventPublisher, never()).publish(any());
+        verify(kafkaMetrics, times(1))
+                .incrementDedupHit(
+                        KafkaTopics.USAGE_EVENTS,
+                        KafkaConsumerGroups.DABOM_PROCESSOR_USAGE_MAIN,
+                        KafkaEventTypes.DATA_USAGE);
+    }
+
+    private void stubCommon(long familyId, long customerId, LocalDate eventMonth, String eventId) {
         given(redisKeyGenerator.generateFamilyInfoKey(familyId))
                 .willReturn("family:" + familyId + ":info");
         given(redisKeyGenerator.generateFamilyRemainingKey(familyId))
@@ -152,6 +189,8 @@ class UsageSyncServiceImplTest {
         given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId))
                 .willReturn("constraintsKey");
         given(redisKeyGenerator.generateFamilyAlertsKey(familyId)).willReturn("alertsKey");
+        given(redisKeyGenerator.generateUsageEventDedupKey(eventId))
+                .willReturn("event:dedup:usage:" + eventId);
         given(
                         usageRedisWarmupHelper.ensureFamilyInfoCached(
                                 familyId, "family:" + familyId + ":info"))

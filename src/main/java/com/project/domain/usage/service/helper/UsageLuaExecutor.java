@@ -19,10 +19,9 @@ public class UsageLuaExecutor {
 
     private final StringRedisTemplate redisTemplate;
     private final RedisScript<List<Object>> usageUpdateScript;
-
     private final LogSanitizer logSanitizer;
 
-    // Usage Lua 스크립트를 실행하고 결과를 도메인 DTO로 변환한다.
+    // usage Lua 실행 + 결과 파싱
     public UsageUpdateResult execute(UsageLuaCommand command, String eventId) {
         List<Object> result =
                 redisTemplate.execute(
@@ -32,10 +31,12 @@ public class UsageLuaExecutor {
                                 command.remainingKey(),
                                 command.monthlyKey(),
                                 command.constraintsKey(),
-                                command.alertsKey()),
+                                command.alertsKey(),
+                                command.dedupKey()),
                         String.valueOf(command.usageBytes()),
                         command.currentHhmm(),
-                        command.appId());
+                        command.appId(),
+                        String.valueOf(command.dedupTtlSeconds()));
 
         if (result == null || result.isEmpty()) {
             log.error("Usage update script returned null. eventId={}", eventId);
@@ -45,9 +46,9 @@ public class UsageLuaExecutor {
         return parseScriptResult(result, eventId);
     }
 
-    // lua script 결과 파싱
+    // Lua 결과 파싱
     private UsageUpdateResult parseScriptResult(List<Object> result, String eventId) {
-        if (result.size() < 6) {
+        if (result.size() < 7) {
             log.error(
                     "Usage update script returned invalid result. eventId={}, result={}",
                     logSanitizer.sanitize(eventId),
@@ -67,19 +68,24 @@ public class UsageLuaExecutor {
                         : Double.parseDouble(userRatioObj.toString());
 
         long monthlyLimit = ((Number) result.get(5)).longValue();
+        // 마지막 값은 duplicate 여부
+        boolean duplicate = ((Number) result.get(6)).longValue() == 1L;
 
         return new UsageUpdateResult(
-                totalUsed, remaining, status, monthlyUsed, userRatio, monthlyLimit);
+                totalUsed, remaining, status, monthlyUsed, userRatio, monthlyLimit, duplicate);
     }
 
-    // Lua 실행에 필요한 키/인자를 한 번에 전달하기 위한 내부 커맨드 객체
+    // Lua 실행에 필요한 인자 묶음
     public record UsageLuaCommand(
             String infoKey,
             String remainingKey,
             String monthlyKey,
             String constraintsKey,
             String alertsKey,
+            // usage-event 중복 검사 키
+            String dedupKey,
             long usageBytes,
             String currentHhmm,
-            String appId) {}
+            String appId,
+            long dedupTtlSeconds) {}
 }

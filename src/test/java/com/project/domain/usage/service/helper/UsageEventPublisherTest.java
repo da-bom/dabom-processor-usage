@@ -39,7 +39,7 @@ class UsageEventPublisherTest {
     void publish_Normal() {
         UsagePayload payload = new UsagePayload(100L, 1L, "app", 1024L, Map.of());
         UsageUpdateResult result =
-                new UsageUpdateResult(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L);
+                new UsageUpdateResult(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L, false);
         UsageEventPublisher.UsageEventContext ctx =
                 new UsageEventPublisher.UsageEventContext(
                         "evt_1", "2026-02-24T12:00:00", payload, result);
@@ -67,7 +67,7 @@ class UsageEventPublisherTest {
     void publish_Warning() {
         UsagePayload payload = new UsagePayload(100L, 1L, "app", 1024L, Map.of());
         UsageUpdateResult result =
-                new UsageUpdateResult(9000L, 1000L, "WARNING_10", 2000L, 0.2, 10000L);
+                new UsageUpdateResult(9000L, 1000L, "WARNING_10", 2000L, 0.2, 10000L, false);
         UsageEventPublisher.UsageEventContext ctx =
                 new UsageEventPublisher.UsageEventContext(
                         "evt_2", "2026-02-24T12:00:00", payload, result);
@@ -91,7 +91,8 @@ class UsageEventPublisherTest {
     void publish_Blocked() {
         UsagePayload payload = new UsagePayload(100L, 1L, "app", 1024L, Map.of());
         UsageUpdateResult result =
-                new UsageUpdateResult(8000L, 2000L, "MONTHLY_LIMIT_EXCEEDED", 10001L, 1.0, 10000L);
+                new UsageUpdateResult(
+                        8000L, 2000L, "MONTHLY_LIMIT_EXCEEDED", 10001L, 1.0, 10000L, false);
         UsageEventPublisher.UsageEventContext ctx =
                 new UsageEventPublisher.UsageEventContext(
                         "evt_3", "2026-02-24T12:00:00", payload, result);
@@ -113,7 +114,7 @@ class UsageEventPublisherTest {
     void publish_AppBlock_SkipsPersistAndRealtime() {
         UsagePayload payload = new UsagePayload(100L, 1L, "app", 1024L, Map.of());
         UsageUpdateResult result =
-                new UsageUpdateResult(8000L, 2000L, "APP_BLOCK", 10001L, 1.0, 10000L);
+                new UsageUpdateResult(8000L, 2000L, "APP_BLOCK", 10001L, 1.0, 10000L, false);
         UsageEventPublisher.UsageEventContext ctx =
                 new UsageEventPublisher.UsageEventContext(
                         "evt_4", "2026-02-24T12:00:00", payload, result);

@@ -45,6 +45,7 @@ app:
   kafka:
     dedup:
       policy-ttl-seconds: ${KAFKA_POLICY_DEDUP_TTL_SECONDS:3600}
+      usage-ttl-seconds: ${KAFKA_USAGE_DEDUP_TTL_SECONDS:1800}
 
 server:
   port: ${SERVER_PORT:8080}

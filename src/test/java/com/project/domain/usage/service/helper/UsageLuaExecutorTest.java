@@ -55,9 +55,11 @@ class UsageLuaExecutorTest {
                         "monthlyKey",
                         "constraintsKey",
                         "alertsKey",
+                        "event:dedup:usage:evt_1",
                         1024L,
                         "2230",
-                        "com.youtube.app");
+                        "com.youtube.app",
+                        60L);
 
         given(
                         redisTemplate.execute(
@@ -65,8 +67,9 @@ class UsageLuaExecutorTest {
                                 anyList(),
                                 any(Object.class),
                                 any(Object.class),
+                                any(Object.class),
                                 any(Object.class)))
-                .willReturn(List.of(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L));
+                .willReturn(List.of(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L, 0L));
 
         UsageUpdateResult result = usageLuaExecutor.execute(command, "evt_1");
 
@@ -76,7 +79,8 @@ class UsageLuaExecutorTest {
                         anyList(),
                         eq("1024"),
                         eq("2230"),
-                        eq("com.youtube.app"));
+                        eq("com.youtube.app"),
+                        eq("60"));
 
         assertEquals(5000L, result.totalUsed());
         assertEquals(5000L, result.remaining());
@@ -84,17 +88,42 @@ class UsageLuaExecutorTest {
         assertEquals(1000L, result.monthlyUsed());
         assertEquals(0.1, result.userRatio());
         assertEquals(10000L, result.monthlyLimit());
+        assertEquals(false, result.duplicate());
+    }
+
+    @Test
+    @DisplayName("duplicate 플래그를 파싱한다")
+    void execute_ParseDuplicateFlag() {
+        UsageLuaExecutor.UsageLuaCommand command =
+                new UsageLuaExecutor.UsageLuaCommand(
+                        "a", "b", "c", "d", "e", "dup", 1L, "0000", "", 60L);
+        given(
+                        redisTemplate.execute(
+                                eq(usageUpdateScript),
+                                anyList(),
+                                any(Object.class),
+                                any(Object.class),
+                                any(Object.class),
+                                any(Object.class)))
+                .willReturn(List.of(100L, 900L, "DUPLICATE", 50L, 0.05, -1L, 1L));
+
+        UsageUpdateResult result = usageLuaExecutor.execute(command, "evt_dup");
+
+        assertEquals(true, result.duplicate());
+        assertEquals("DUPLICATE", result.status());
     }
 
     @Test
     @DisplayName("Lua 결과가 null이면 예외를 던진다")
     void execute_NullResult() {
         UsageLuaExecutor.UsageLuaCommand command =
-                new UsageLuaExecutor.UsageLuaCommand("a", "b", "c", "d", "e", 1L, "0000", "");
+                new UsageLuaExecutor.UsageLuaCommand(
+                        "a", "b", "c", "d", "e", "dup", 1L, "0000", "", 60L);
         given(
                         redisTemplate.execute(
                                 eq(usageUpdateScript),
                                 anyList(),
+                                any(Object.class),
                                 any(Object.class),
                                 any(Object.class),
                                 any(Object.class)))
@@ -107,11 +136,13 @@ class UsageLuaExecutorTest {
     @DisplayName("Lua 결과 길이가 부족하면 예외를 던진다")
     void execute_InvalidResultSize() {
         UsageLuaExecutor.UsageLuaCommand command =
-                new UsageLuaExecutor.UsageLuaCommand("a", "b", "c", "d", "e", 1L, "0000", "");
+                new UsageLuaExecutor.UsageLuaCommand(
+                        "a", "b", "c", "d", "e", "dup", 1L, "0000", "", 60L);
         given(
                         redisTemplate.execute(
                                 eq(usageUpdateScript),
                                 anyList(),
+                                any(Object.class),
                                 any(Object.class),
                                 any(Object.class),
                                 any(Object.class)))
