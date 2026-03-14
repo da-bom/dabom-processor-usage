@@ -16,24 +16,40 @@ public class RedisKeyGenerator {
             DateTimeFormatter.ofPattern("yyyyMM");
 
     // 가족 알림 상태 키
-    public String generateFamilyAlertsKey(Long familyId) {
+    public String generateFamilyAlertKey(Long familyId, int threshold, LocalDate eventMonth) {
         return FAMILY_KEY_PREFIX
                 + KEY_SEPARATOR
                 + familyId
                 + KEY_SEPARATOR
                 + "alert"
                 + KEY_SEPARATOR
-                + "THRESHOLD";
+                + "THRESHOLD"
+                + KEY_SEPARATOR
+                + threshold
+                + KEY_SEPARATOR
+                + formatMonth(eventMonth);
     }
 
     // 가족 quota 정보 키
-    public String generateFamilyInfoKey(Long familyId) {
-        return FAMILY_KEY_PREFIX + KEY_SEPARATOR + familyId + KEY_SEPARATOR + "info";
+    public String generateFamilyInfoKey(Long familyId, LocalDate eventMonth) {
+        return FAMILY_KEY_PREFIX
+                + KEY_SEPARATOR
+                + familyId
+                + KEY_SEPARATOR
+                + "info"
+                + KEY_SEPARATOR
+                + formatMonth(eventMonth);
     }
 
     // 가족 잔여 데이터 키
-    public String generateFamilyRemainingKey(Long familyId) {
-        return FAMILY_KEY_PREFIX + KEY_SEPARATOR + familyId + KEY_SEPARATOR + "remaining";
+    public String generateFamilyRemainingKey(Long familyId, LocalDate eventMonth) {
+        return FAMILY_KEY_PREFIX
+                + KEY_SEPARATOR
+                + familyId
+                + KEY_SEPARATOR
+                + "remaining"
+                + KEY_SEPARATOR
+                + formatMonth(eventMonth);
     }
 
     // 고객 월별 사용량 키
@@ -51,7 +67,7 @@ public class RedisKeyGenerator {
                 + KEY_SEPARATOR
                 + "monthly"
                 + KEY_SEPARATOR
-                + eventMonth.format(MONTH_SUFFIX_FORMATTER);
+                + formatMonth(eventMonth);
     }
 
     // 고객 정책 제약 키
@@ -75,5 +91,9 @@ public class RedisKeyGenerator {
     // usage-event dedup 키
     public String generateUsageEventDedupKey(String eventId) {
         return USAGE_EVENT_DEDUP_KEY_PREFIX + KEY_SEPARATOR + eventId;
+    }
+
+    private String formatMonth(LocalDate eventMonth) {
+        return eventMonth.format(MONTH_SUFFIX_FORMATTER);
     }
 }

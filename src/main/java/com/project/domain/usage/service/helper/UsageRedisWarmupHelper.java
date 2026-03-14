@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import com.project.domain.customer.entity.CustomerQuota;
 import com.project.domain.customer.repository.CustomerQuotaRepository;
 import com.project.domain.family.entity.Family;
+import com.project.domain.family.entity.FamilyQuota;
+import com.project.domain.family.repository.FamilyQuotaRepository;
 import com.project.domain.family.repository.FamilyRepository;
 import com.project.domain.usage.infra.cache.dto.FamilyInfoRedisHash;
 import com.project.domain.usage.service.dto.FamilyInfo;
@@ -30,9 +32,10 @@ public class UsageRedisWarmupHelper {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final FamilyRepository familyRepository;
+    private final FamilyQuotaRepository familyQuotaRepository;
     private final CustomerQuotaRepository customerQuotaRepository;
 
-    public boolean ensureFamilyInfoCached(long familyId, String key) {
+    public boolean ensureFamilyInfoCached(long familyId, LocalDate eventMonth, String key) {
         try {
             // Redis 조회
             Map<Object, Object> hash = stringRedisTemplate.opsForHash().entries(key);
@@ -40,25 +43,33 @@ public class UsageRedisWarmupHelper {
                 return true; // 이미 캐시 존재
             }
 
-            // DB 조회
-            Family entity = familyRepository.findById(familyId).orElse(null);
-            if (entity == null) {
+            // family와 family_quota 스냅샷을 조합해서 월별 info hash를 채움
+            Family family = familyRepository.findById(familyId).orElse(null);
+            if (family == null) {
                 log.warn("Family not found in DB during Redis fallback. familyId={}", familyId);
+                return false;
+            }
+
+            FamilyQuota familyQuota = resolveFamilyQuotaForInfo(familyId, eventMonth);
+            if (familyQuota == null) {
+                log.warn(
+                        "Family quota snapshot not found in DB during info warmup. familyId={},"
+                                + " eventMonth={}",
+                        familyId,
+                        eventMonth);
                 return false;
             }
 
             FamilyInfo info =
                     new FamilyInfo(
                             familyId,
-                            entity.getName(),
-                            entity.getTotalQuotaBytes(),
-                            entity.getCreatedAt());
+                            family.getName(),
+                            familyQuota.getTotalQuotaBytes(),
+                            family.getCreatedAt());
 
             // Redis 저장
             stringRedisTemplate.opsForHash().putAll(key, FamilyInfoRedisHash.toHash(info));
-
             return true;
-
         } catch (DataAccessException e) {
             log.error("Data access error during ensureFamilyInfoCached. familyId={}", familyId, e);
             return false;
@@ -68,7 +79,7 @@ public class UsageRedisWarmupHelper {
         }
     }
 
-    public boolean ensureRemainingBytesCached(long familyId, String key) {
+    public boolean ensureRemainingBytesCached(long familyId, LocalDate eventMonth, String key) {
         try {
             // Redis에 값이 있으면 성공
             String cached = stringRedisTemplate.opsForValue().get(key);
@@ -76,14 +87,34 @@ public class UsageRedisWarmupHelper {
                 return true;
             }
 
-            // Redis에 없으면 DB 조회
-            Family family = familyRepository.findById(familyId).orElse(null);
-            if (family == null) {
-                log.warn("Family not found in DB during Redis fallback. familyId={}", familyId);
+            // 현재 월 row가 있으면 실제 잔여량을 쓰고 없으면 최신 총량으로 월초 상태를 시드함
+            FamilyQuota currentMonthQuota =
+                    familyQuotaRepository
+                            .findActiveByFamilyIdAndCurrentMonth(familyId, eventMonth)
+                            .orElse(null);
+            FamilyQuota latestSnapshot =
+                    currentMonthQuota != null
+                            ? currentMonthQuota
+                            : familyQuotaRepository
+                                    .findTopByFamilyIdAndDeletedAtIsNullOrderByCurrentMonthDesc(
+                                            familyId)
+                                    .orElse(null);
+            if (latestSnapshot == null) {
+                log.warn(
+                        "Family quota snapshot not found in DB during remaining warmup."
+                                + " familyId={}, eventMonth={}",
+                        familyId,
+                        eventMonth);
                 return false;
             }
 
-            long remaining = Math.max(0L, family.getTotalQuotaBytes() - family.getUsedBytes());
+            long remaining =
+                    currentMonthQuota != null
+                            ? Math.max(
+                                    0L,
+                                    currentMonthQuota.getTotalQuotaBytes()
+                                            - currentMonthQuota.getUsedBytes())
+                            : latestSnapshot.getTotalQuotaBytes();
 
             // Redis에 쓰기
             Boolean written =
@@ -95,7 +126,6 @@ public class UsageRedisWarmupHelper {
             // setIfAbsent가 false면 다시 GET해서 존재 확인
             // 다른 스레드/인스턴스가 먼저 세팅했어도 그건 성공으로 판단
             return stringRedisTemplate.hasKey(key);
-
         } catch (DataAccessException e) {
             // Redis/DB 접근 계층 예외 (스프링 데이터 공통)
             log.error(
@@ -120,7 +150,7 @@ public class UsageRedisWarmupHelper {
                 return true;
             }
 
-            // CustomerQuota 조회
+            // 월 row가 없어도 첫 이벤트 처리를 위해 0으로 시드함
             CustomerQuota quota =
                     customerQuotaRepository
                             .findActiveByFamilyIdAndCustomerIdAndCurrentMonth(
@@ -154,7 +184,6 @@ public class UsageRedisWarmupHelper {
             // setIfAbsent가 false면 다시 GET해서 존재 확인
             // 다른 스레드/인스턴스가 먼저 세팅했어도 그건 성공으로 판단
             return stringRedisTemplate.hasKey(key);
-
         } catch (DataAccessException e) {
             log.error(
                     "Data access error during usage cache warm-up. familyId={}, customerId={},"
@@ -174,5 +203,17 @@ public class UsageRedisWarmupHelper {
                     e);
             return false;
         }
+    }
+
+    private FamilyQuota resolveFamilyQuotaForInfo(long familyId, LocalDate eventMonth) {
+        // info hash는 현재 월 스냅샷을 우선하고 없으면 최신 스냅샷으로 대체함
+        return familyQuotaRepository
+                .findActiveByFamilyIdAndCurrentMonth(familyId, eventMonth)
+                .or(
+                        () ->
+                                familyQuotaRepository
+                                        .findTopByFamilyIdAndDeletedAtIsNullOrderByCurrentMonthDesc(
+                                                familyId))
+                .orElse(null);
     }
 }
