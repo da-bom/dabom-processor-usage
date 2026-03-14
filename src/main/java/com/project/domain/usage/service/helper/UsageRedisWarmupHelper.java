@@ -88,33 +88,33 @@ public class UsageRedisWarmupHelper {
             }
 
             // 현재 월 row가 있으면 실제 잔여량을 쓰고 없으면 최신 총량으로 월초 상태를 시드함
+            long remaining;
             FamilyQuota currentMonthQuota =
                     familyQuotaRepository
                             .findActiveByFamilyIdAndCurrentMonth(familyId, eventMonth)
                             .orElse(null);
-            FamilyQuota latestSnapshot =
-                    currentMonthQuota != null
-                            ? currentMonthQuota
-                            : familyQuotaRepository
-                                    .findTopByFamilyIdAndDeletedAtIsNullOrderByCurrentMonthDesc(
-                                            familyId)
-                                    .orElse(null);
-            if (latestSnapshot == null) {
-                log.warn(
-                        "Family quota snapshot not found in DB during remaining warmup."
-                                + " familyId={}, eventMonth={}",
-                        familyId,
-                        eventMonth);
-                return false;
+            if (currentMonthQuota != null) {
+                remaining =
+                        Math.max(
+                                0L,
+                                currentMonthQuota.getTotalQuotaBytes()
+                                        - currentMonthQuota.getUsedBytes());
+            } else {
+                FamilyQuota latestSnapshot =
+                        familyQuotaRepository
+                                .findTopByFamilyIdAndDeletedAtIsNullOrderByCurrentMonthDesc(
+                                        familyId)
+                                .orElse(null);
+                if (latestSnapshot == null) {
+                    log.warn(
+                            "Family quota snapshot not found in DB during remaining warmup."
+                                    + " familyId={}, eventMonth={}",
+                            familyId,
+                            eventMonth);
+                    return false;
+                }
+                remaining = latestSnapshot.getTotalQuotaBytes();
             }
-
-            long remaining =
-                    currentMonthQuota != null
-                            ? Math.max(
-                                    0L,
-                                    currentMonthQuota.getTotalQuotaBytes()
-                                            - currentMonthQuota.getUsedBytes())
-                            : latestSnapshot.getTotalQuotaBytes();
 
             // Redis에 쓰기
             Boolean written =
