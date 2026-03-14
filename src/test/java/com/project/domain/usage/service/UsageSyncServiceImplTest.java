@@ -83,11 +83,13 @@ class UsageSyncServiceImplTest {
         verify(usageLuaExecutor, times(1)).execute(commandCaptor.capture(), eq(eventId));
 
         UsageLuaExecutor.UsageLuaCommand command = commandCaptor.getValue();
-        assertEquals("family:100:info", command.infoKey());
-        assertEquals("family:100:remaining", command.remainingKey());
+        assertEquals("family:100:info:202603", command.infoKey());
+        assertEquals("family:100:remaining:202603", command.remainingKey());
         assertEquals("monthlyKey", command.monthlyKey());
         assertEquals("constraintsKey", command.constraintsKey());
-        assertEquals("alertsKey", command.alertsKey());
+        assertEquals("family:100:alert:THRESHOLD:50:202603", command.alert50Key());
+        assertEquals("family:100:alert:THRESHOLD:30:202603", command.alert30Key());
+        assertEquals("family:100:alert:THRESHOLD:10:202603", command.alert10Key());
         assertEquals("event:dedup:usage:evt_1", command.dedupKey());
         assertEquals(1024L, command.usageBytes());
         assertEquals("1234", command.currentHhmm());
@@ -130,20 +132,30 @@ class UsageSyncServiceImplTest {
         LocalDate eventMonth = LocalDate.of(2026, 3, 1);
         UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
 
-        given(redisKeyGenerator.generateFamilyInfoKey(100L)).willReturn("family:100:info");
-        given(redisKeyGenerator.generateFamilyRemainingKey(100L))
-                .willReturn("family:100:remaining");
+        given(redisKeyGenerator.generateFamilyInfoKey(100L, eventMonth))
+                .willReturn("family:100:info:202603");
+        given(redisKeyGenerator.generateFamilyRemainingKey(100L, eventMonth))
+                .willReturn("family:100:remaining:202603");
         given(redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(100L, 1L, eventMonth))
                 .willReturn("monthlyKey");
         given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(100L, 1L))
                 .willReturn("constraintsKey");
-        given(redisKeyGenerator.generateFamilyAlertsKey(100L)).willReturn("alertsKey");
+        given(redisKeyGenerator.generateFamilyAlertKey(100L, 50, eventMonth))
+                .willReturn("family:100:alert:THRESHOLD:50:202603");
+        given(redisKeyGenerator.generateFamilyAlertKey(100L, 30, eventMonth))
+                .willReturn("family:100:alert:THRESHOLD:30:202603");
+        given(redisKeyGenerator.generateFamilyAlertKey(100L, 10, eventMonth))
+                .willReturn("family:100:alert:THRESHOLD:10:202603");
         given(redisKeyGenerator.generateUsageEventDedupKey(eventId))
                 .willReturn("event:dedup:usage:" + eventId);
 
-        given(usageRedisWarmupHelper.ensureFamilyInfoCached(100L, "family:100:info"))
+        given(
+                        usageRedisWarmupHelper.ensureFamilyInfoCached(
+                                100L, eventMonth, "family:100:info:202603"))
                 .willReturn(false);
-        given(usageRedisWarmupHelper.ensureRemainingBytesCached(100L, "family:100:remaining"))
+        given(
+                        usageRedisWarmupHelper.ensureRemainingBytesCached(
+                                100L, eventMonth, "family:100:remaining:202603"))
                 .willReturn(true);
         given(usageRedisWarmupHelper.ensureCustomerUsageCached(100L, 1L, "monthlyKey", eventMonth))
                 .willReturn(true);
@@ -178,26 +190,31 @@ class UsageSyncServiceImplTest {
     }
 
     private void stubCommon(long familyId, long customerId, LocalDate eventMonth, String eventId) {
-        given(redisKeyGenerator.generateFamilyInfoKey(familyId))
-                .willReturn("family:" + familyId + ":info");
-        given(redisKeyGenerator.generateFamilyRemainingKey(familyId))
-                .willReturn("family:" + familyId + ":remaining");
+        given(redisKeyGenerator.generateFamilyInfoKey(familyId, eventMonth))
+                .willReturn("family:" + familyId + ":info:202603");
+        given(redisKeyGenerator.generateFamilyRemainingKey(familyId, eventMonth))
+                .willReturn("family:" + familyId + ":remaining:202603");
         given(
                         redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(
                                 familyId, customerId, eventMonth))
                 .willReturn("monthlyKey");
         given(redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId))
                 .willReturn("constraintsKey");
-        given(redisKeyGenerator.generateFamilyAlertsKey(familyId)).willReturn("alertsKey");
+        given(redisKeyGenerator.generateFamilyAlertKey(familyId, 50, eventMonth))
+                .willReturn("family:" + familyId + ":alert:THRESHOLD:50:202603");
+        given(redisKeyGenerator.generateFamilyAlertKey(familyId, 30, eventMonth))
+                .willReturn("family:" + familyId + ":alert:THRESHOLD:30:202603");
+        given(redisKeyGenerator.generateFamilyAlertKey(familyId, 10, eventMonth))
+                .willReturn("family:" + familyId + ":alert:THRESHOLD:10:202603");
         given(redisKeyGenerator.generateUsageEventDedupKey(eventId))
                 .willReturn("event:dedup:usage:" + eventId);
         given(
                         usageRedisWarmupHelper.ensureFamilyInfoCached(
-                                familyId, "family:" + familyId + ":info"))
+                                familyId, eventMonth, "family:" + familyId + ":info:202603"))
                 .willReturn(true);
         given(
                         usageRedisWarmupHelper.ensureRemainingBytesCached(
-                                familyId, "family:" + familyId + ":remaining"))
+                                familyId, eventMonth, "family:" + familyId + ":remaining:202603"))
                 .willReturn(true);
         given(
                         usageRedisWarmupHelper.ensureCustomerUsageCached(

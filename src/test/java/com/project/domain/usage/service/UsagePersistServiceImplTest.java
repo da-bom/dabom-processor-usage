@@ -24,7 +24,7 @@ import com.dabom.messaging.kafka.event.dto.EventEnvelope;
 import com.dabom.messaging.kafka.event.dto.usage.UsagePersistPayload;
 import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.usage.service.helper.CustomerQuotaWriter;
-import com.project.domain.usage.service.helper.FamilyUsageWriter;
+import com.project.domain.usage.service.helper.FamilyQuotaWriter;
 import com.project.domain.usage.service.helper.UsagePersistEventValidator;
 import com.project.domain.usage.service.helper.UsageRecordWriter;
 import com.project.global.util.LogSanitizer;
@@ -38,7 +38,7 @@ class UsagePersistServiceImplTest {
     @Mock private UsagePersistEventValidator usagePersistEventValidator;
     @Mock private UsageRecordWriter usageRecordWriter;
     @Mock private CustomerQuotaWriter customerQuotaWriter;
-    @Mock private FamilyUsageWriter familyUsageWriter;
+    @Mock private FamilyQuotaWriter familyQuotaWriter;
     @Mock private LogSanitizer logSanitizer;
 
     @BeforeEach
@@ -53,7 +53,7 @@ class UsagePersistServiceImplTest {
     }
 
     @Test
-    @DisplayName("허용 이벤트면 eventMonth 기준으로 quota와 family를 함께 갱신한다")
+    @DisplayName("허용 이벤트면 eventMonth 기준으로 quota와 family_quota를 함께 갱신한다")
     void persist_AllowedEvent_UpdatesQuotaAndFamilyByEventMonth() {
         UsagePersistPayload payload =
                 new UsagePersistPayload(
@@ -73,13 +73,13 @@ class UsagePersistServiceImplTest {
 
         verify(customerQuotaWriter, times(1))
                 .persistAllowedQuota(payload, eventMonth, "evt_1", "origin_1");
-        verify(familyUsageWriter, times(1))
-                .updateFamilyUsedBytes(100L, eventMonth, 2048L, "evt_1", "origin_1");
+        verify(familyQuotaWriter, times(1))
+                .persistAllowedQuota(100L, eventMonth, 2048L, "evt_1", "origin_1");
         verify(customerQuotaWriter, never()).persistBlockedQuota(any(), any(), any(), any(), any());
     }
 
     @Test
-    @DisplayName("차단 이벤트면 usage_record와 family 누적 없이 차단 상태만 반영한다")
+    @DisplayName("차단 이벤트면 usage_record와 family_quota 누적 없이 차단 상태만 반영한다")
     void persist_BlockedEvent_OnlyPersistsBlockState() {
         UsagePersistPayload payload =
                 new UsagePersistPayload(
@@ -100,6 +100,6 @@ class UsagePersistServiceImplTest {
                 .persistBlockedQuota(payload, eventMonth, "evt_2", "origin_2", "TIME_BLOCK");
         verify(usageRecordWriter, never()).persistUsageRecord(any(), any(), any());
         verify(customerQuotaWriter, never()).persistAllowedQuota(any(), any(), any(), any());
-        verify(familyUsageWriter, never()).updateFamilyUsedBytes(any(), any(), any(), any(), any());
+        verify(familyQuotaWriter, never()).persistAllowedQuota(any(), any(), any(), any(), any());
     }
 }

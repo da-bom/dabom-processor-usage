@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -50,11 +51,13 @@ class UsageLuaExecutorTest {
     void execute_ParseSuccess() {
         UsageLuaExecutor.UsageLuaCommand command =
                 new UsageLuaExecutor.UsageLuaCommand(
-                        "family:100:info",
-                        "family:100:remaining",
+                        "family:100:info:202603",
+                        "family:100:remaining:202603",
                         "monthlyKey",
                         "constraintsKey",
-                        "alertsKey",
+                        "family:100:alert:THRESHOLD:50:202603",
+                        "family:100:alert:THRESHOLD:30:202603",
+                        "family:100:alert:THRESHOLD:10:202603",
                         "event:dedup:usage:evt_1",
                         1024L,
                         "2230",
@@ -73,15 +76,27 @@ class UsageLuaExecutorTest {
 
         UsageUpdateResult result = usageLuaExecutor.execute(command, "evt_1");
 
+        ArgumentCaptor<List> keysCaptor = ArgumentCaptor.forClass(List.class);
         verify(redisTemplate)
                 .execute(
                         eq(usageUpdateScript),
-                        anyList(),
+                        keysCaptor.capture(),
                         eq("1024"),
                         eq("2230"),
                         eq("com.youtube.app"),
                         eq("60"));
 
+        assertEquals(
+                List.of(
+                        "family:100:info:202603",
+                        "family:100:remaining:202603",
+                        "monthlyKey",
+                        "constraintsKey",
+                        "family:100:alert:THRESHOLD:50:202603",
+                        "family:100:alert:THRESHOLD:30:202603",
+                        "family:100:alert:THRESHOLD:10:202603",
+                        "event:dedup:usage:evt_1"),
+                keysCaptor.getValue());
         assertEquals(5000L, result.totalUsed());
         assertEquals(5000L, result.remaining());
         assertEquals("NORMAL", result.status());
@@ -96,7 +111,7 @@ class UsageLuaExecutorTest {
     void execute_ParseDuplicateFlag() {
         UsageLuaExecutor.UsageLuaCommand command =
                 new UsageLuaExecutor.UsageLuaCommand(
-                        "a", "b", "c", "d", "e", "dup", 1L, "0000", "", 60L);
+                        "a", "b", "c", "d", "e", "f", "g", "dup", 1L, "0000", "", 60L);
         given(
                         redisTemplate.execute(
                                 eq(usageUpdateScript),
@@ -118,7 +133,7 @@ class UsageLuaExecutorTest {
     void execute_NullResult() {
         UsageLuaExecutor.UsageLuaCommand command =
                 new UsageLuaExecutor.UsageLuaCommand(
-                        "a", "b", "c", "d", "e", "dup", 1L, "0000", "", 60L);
+                        "a", "b", "c", "d", "e", "f", "g", "dup", 1L, "0000", "", 60L);
         given(
                         redisTemplate.execute(
                                 eq(usageUpdateScript),
@@ -137,7 +152,7 @@ class UsageLuaExecutorTest {
     void execute_InvalidResultSize() {
         UsageLuaExecutor.UsageLuaCommand command =
                 new UsageLuaExecutor.UsageLuaCommand(
-                        "a", "b", "c", "d", "e", "dup", 1L, "0000", "", 60L);
+                        "a", "b", "c", "d", "e", "f", "g", "dup", 1L, "0000", "", 60L);
         given(
                         redisTemplate.execute(
                                 eq(usageUpdateScript),
