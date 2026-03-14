@@ -42,8 +42,7 @@ public interface FamilyQuotaRepository extends JpaRepository<FamilyQuota, Long> 
     @Modifying
     @Query(
             "update FamilyQuota fq "
-                    + "set fq.usedBytes = fq.usedBytes + :bytesUsed, "
-                    + "fq.updatedAt = CURRENT_TIMESTAMP "
+                    + "set fq.usedBytes = fq.usedBytes + :bytesUsed "
                     + "where fq.familyId = :familyId "
                     + "and fq.currentMonth = :currentMonth "
                     + "and fq.deletedAt is null")
