@@ -1,7 +1,5 @@
 package com.project.domain.family.entity;
 
-import java.time.LocalDate;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -32,36 +30,11 @@ public class Family extends BaseEntity {
     @Column(name = "created_by_id", nullable = false)
     private Long createdById;
 
-    @Column(name = "total_quota_bytes", nullable = false)
-    private Long totalQuotaBytes;
-
-    @Column(name = "used_bytes", nullable = false)
-    private Long usedBytes;
-
-    @Column(name = "current_month", nullable = false)
-    private LocalDate currentMonth;
-
     @Builder
-    public Family(
-            Long id,
-            String name,
-            Long createdById,
-            Long totalQuotaBytes,
-            Long usedBytes,
-            LocalDate currentMonth) {
+    public Family(Long id, String name, Long createdById) {
         this.id = id;
         this.name = name;
         this.createdById = createdById;
-        this.totalQuotaBytes = totalQuotaBytes;
-        this.usedBytes = usedBytes;
-        this.currentMonth = currentMonth;
-    }
-
-    public double calculateUsedPercent() {
-        if (totalQuotaBytes == null || totalQuotaBytes == 0) {
-            return 0.0;
-        }
-        return (double) usedBytes / totalQuotaBytes * 100.0;
     }
 
     public void changeName(String name) {
