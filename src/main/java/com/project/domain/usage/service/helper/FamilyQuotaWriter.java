@@ -7,6 +7,8 @@ import org.springframework.stereotype.Service;
 
 import com.project.domain.family.entity.FamilyQuota;
 import com.project.domain.family.repository.FamilyQuotaRepository;
+import com.project.global.exception.ApplicationException;
+import com.project.global.exception.code.FamilyErrorCode;
 import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;
@@ -76,7 +78,7 @@ public class FamilyQuotaWriter {
                     familyId,
                     bytesUsed,
                     currentMonth);
-            throw new IllegalStateException("Latest family_quota snapshot not found");
+            throw new ApplicationException(FamilyErrorCode.LATEST_QUOTA_SNAPSHOT_NOT_FOUND);
         }
 
         // 다른 트랜잭션이 현재 월 row를 먼저 만들었으면 update 재시도로 수렴함
@@ -84,7 +86,7 @@ public class FamilyQuotaWriter {
             if (tryUpdateExistingQuota(familyId, currentMonth, bytesUsed, eventId, originEventId)) {
                 return;
             }
-            throw new IllegalStateException("Failed to update current family_quota row");
+            throw new ApplicationException(FamilyErrorCode.FAMILY_QUOTA_UPDATE_FAILED);
         }
 
         FamilyQuota familyQuota =

@@ -25,6 +25,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 import com.project.domain.family.entity.FamilyQuota;
 import com.project.domain.family.repository.FamilyQuotaRepository;
+import com.project.global.exception.ApplicationException;
+import com.project.global.exception.code.FamilyErrorCode;
 import com.project.global.util.LogSanitizer;
 
 @ExtendWith(MockitoExtension.class)
@@ -112,17 +114,47 @@ class FamilyQuotaWriterTest {
     }
 
     @Test
-    @DisplayName("최신 스냅샷이 없으면 예외를 던진다")
-    void persistAllowedQuota_ThrowsWhenLatestSnapshotMissing() {
+    @DisplayName("최신 스냅샷이 없으면 family error code로 예외를 던진다")
+    void persistAllowedQuota_ThrowsApplicationExceptionWhenLatestSnapshotMissing() {
         LocalDate eventMonth = LocalDate.of(2026, 3, 1);
         given(familyQuotaRepository.incrementUsedBytes(100L, eventMonth, 1024L)).willReturn(0);
         given(familyQuotaRepository.findLatestByFamilyIdForUpdate(100L))
                 .willReturn(Optional.empty());
 
-        assertThrows(
-                IllegalStateException.class,
-                () ->
-                        familyQuotaWriter.persistAllowedQuota(
-                                100L, eventMonth, 1024L, "evt_1", "origin_1"));
+        ApplicationException exception =
+                assertThrows(
+                        ApplicationException.class,
+                        () ->
+                                familyQuotaWriter.persistAllowedQuota(
+                                        100L, eventMonth, 1024L, "evt_1", "origin_1"));
+
+        assertEquals(FamilyErrorCode.LATEST_QUOTA_SNAPSHOT_NOT_FOUND, exception.getCode());
+    }
+
+    @Test
+    @DisplayName("현재 월 row update 재시도도 실패하면 family error code로 예외를 던진다")
+    void persistAllowedQuota_ThrowsApplicationExceptionWhenCurrentMonthUpdateFails() {
+        LocalDate eventMonth = LocalDate.of(2026, 3, 1);
+        FamilyQuota latest =
+                FamilyQuota.builder()
+                        .id(1L)
+                        .familyId(100L)
+                        .currentMonth(eventMonth)
+                        .totalQuotaBytes(10000L)
+                        .usedBytes(7000L)
+                        .build();
+
+        given(familyQuotaRepository.incrementUsedBytes(100L, eventMonth, 1024L)).willReturn(0);
+        given(familyQuotaRepository.findLatestByFamilyIdForUpdate(100L))
+                .willReturn(Optional.of(latest));
+
+        ApplicationException exception =
+                assertThrows(
+                        ApplicationException.class,
+                        () ->
+                                familyQuotaWriter.persistAllowedQuota(
+                                        100L, eventMonth, 1024L, "evt_1", "origin_1"));
+
+        assertEquals(FamilyErrorCode.FAMILY_QUOTA_UPDATE_FAILED, exception.getCode());
     }
 }
