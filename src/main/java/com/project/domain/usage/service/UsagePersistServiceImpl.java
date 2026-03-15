@@ -12,7 +12,7 @@ import com.dabom.messaging.kafka.event.dto.usage.UsagePersistPayload;
 import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.usage.enums.UsagePersistProcessResult;
 import com.project.domain.usage.service.helper.CustomerQuotaWriter;
-import com.project.domain.usage.service.helper.FamilyUsageWriter;
+import com.project.domain.usage.service.helper.FamilyQuotaWriter;
 import com.project.domain.usage.service.helper.UsagePersistEventValidator;
 import com.project.domain.usage.service.helper.UsageRecordWriter;
 import com.project.global.common.TimeConstants;
@@ -32,7 +32,7 @@ public class UsagePersistServiceImpl implements UsagePersistService {
     private final UsagePersistEventValidator usagePersistEventValidator;
     private final UsageRecordWriter usageRecordWriter;
     private final CustomerQuotaWriter customerQuotaWriter;
-    private final FamilyUsageWriter familyUsageWriter;
+    private final FamilyQuotaWriter familyQuotaWriter;
     private final LogSanitizer logSanitizer;
 
     // usage-persist 처리의 전체 흐름을 조율
@@ -81,7 +81,7 @@ public class UsagePersistServiceImpl implements UsagePersistService {
 
         // 4) 허용 이벤트의 월 누적 반영
         customerQuotaWriter.persistAllowedQuota(payload, currentMonth, eventId, originEventId);
-        familyUsageWriter.updateFamilyUsedBytes(
+        familyQuotaWriter.persistAllowedQuota(
                 payload.familyId(), currentMonth, payload.bytesUsed(), eventId, originEventId);
     }
 

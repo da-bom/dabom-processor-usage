@@ -10,7 +10,7 @@ spring:
     name: backend
 
   datasource:
-    url: ${DATABASE_URL:jdbc:mysql://localhost:3310/app_db?serverTimezone=Asia/Seoul&characterEncoding=UTF-8}
+    url: ${DATABASE_URL:jdbc:mysql://localhost:13306/app_db?serverTimezone=Asia/Seoul&characterEncoding=UTF-8}
     username: ${DATABASE_USER:app_user}
     password: ${DATABASE_PASSWORD:app_password}
     driver-class-name: com.mysql.cj.jdbc.Driver

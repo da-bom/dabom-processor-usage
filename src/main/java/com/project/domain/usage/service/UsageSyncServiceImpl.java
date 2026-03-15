@@ -42,7 +42,6 @@ public class UsageSyncServiceImpl implements UsageSyncService {
     private final LogSanitizer logSanitizer;
     private final KafkaMetrics kafkaMetrics;
 
-    // usage-event dedup TTL
     @Value("${app.kafka.dedup.usage-ttl-seconds}")
     private long dedupTtlSeconds;
 
@@ -58,21 +57,24 @@ public class UsageSyncServiceImpl implements UsageSyncService {
         LocalDate eventMonth = resolvedEventDateTime.toLocalDate().withDayOfMonth(1);
 
         // 2) Lua 실행에 필요한 Redis 키 생성
-        String infoKey = redisKeyGenerator.generateFamilyInfoKey(familyId);
-        String remainingKey = redisKeyGenerator.generateFamilyRemainingKey(familyId);
+        String infoKey = redisKeyGenerator.generateFamilyInfoKey(familyId, eventMonth);
+        String remainingKey = redisKeyGenerator.generateFamilyRemainingKey(familyId, eventMonth);
         String monthlyKey =
                 redisKeyGenerator.generateFamilyCustomerMonthlyUsageKey(
                         familyId, customerId, eventMonth);
         String constraintsKey =
                 redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId);
-        String alertsKey = redisKeyGenerator.generateFamilyAlertsKey(familyId);
+        String alert50Key = redisKeyGenerator.generateFamilyAlertKey(familyId, 50, eventMonth);
+        String alert30Key = redisKeyGenerator.generateFamilyAlertKey(familyId, 30, eventMonth);
+        String alert10Key = redisKeyGenerator.generateFamilyAlertKey(familyId, 10, eventMonth);
         String dedupKey = redisKeyGenerator.generateUsageEventDedupKey(eventId);
 
         // 3) Redis warmup 보장
         boolean familyInfoRedisWarmup =
-                usageRedisWarmupHelper.ensureFamilyInfoCached(familyId, infoKey);
+                usageRedisWarmupHelper.ensureFamilyInfoCached(familyId, eventMonth, infoKey);
         boolean familyRemainingRedisWarmup =
-                usageRedisWarmupHelper.ensureRemainingBytesCached(familyId, remainingKey);
+                usageRedisWarmupHelper.ensureRemainingBytesCached(
+                        familyId, eventMonth, remainingKey);
         boolean customerMonthlyUsageRedisWarmup =
                 usageRedisWarmupHelper.ensureCustomerUsageCached(
                         familyId, customerId, monthlyKey, eventMonth);
@@ -96,7 +98,9 @@ public class UsageSyncServiceImpl implements UsageSyncService {
                                 remainingKey,
                                 monthlyKey,
                                 constraintsKey,
-                                alertsKey,
+                                alert50Key,
+                                alert30Key,
+                                alert10Key,
                                 dedupKey,
                                 usageBytes,
                                 currentHhmm,

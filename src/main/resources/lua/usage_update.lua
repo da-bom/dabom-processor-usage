@@ -1,9 +1,11 @@
--- KEYS[1]: family:{fid}:info
--- KEYS[2]: family:{fid}:remaining
+-- KEYS[1]: family:{fid}:info:{yyyyMM}
+-- KEYS[2]: family:{fid}:remaining:{yyyyMM}
 -- KEYS[3]: family:{fid}:customer:{uid}:usage:monthly:{yyyyMM}
 -- KEYS[4]: family:{fid}:customer:{uid}:constraints
--- KEYS[5]: family:{fid}:alert:THRESHOLD (prefix)
--- KEYS[6]: event:dedup:usage:{eventId}
+-- KEYS[5]: family:{fid}:alert:THRESHOLD:50:{yyyyMM}
+-- KEYS[6]: family:{fid}:alert:THRESHOLD:30:{yyyyMM}
+-- KEYS[7]: family:{fid}:alert:THRESHOLD:10:{yyyyMM}
+-- KEYS[8]: event:dedup:usage:{eventId}
 -- ARGV[1]: usageBytes
 -- ARGV[2]: currentHHmm (e.g. 2230)
 -- ARGV[3]: normalizedAppId
@@ -38,7 +40,8 @@ end
 
 -- 1) 동일 eventId 재처리 방지
 if dedupTtlSeconds > 0 then
-    local firstSeen = redis.call('SET', KEYS[6], '1', 'NX', 'EX', dedupTtlSeconds)
+    -- 같은 eventId는 월별 상태 반영 전에 바로 차단함
+    local firstSeen = redis.call('SET', KEYS[8], '1', 'NX', 'EX', dedupTtlSeconds)
     if not firstSeen then
         return {0, 0, 'DUPLICATE', 0, 0, -1, 1}
     end
@@ -103,6 +106,7 @@ end
 
 local currentRemaining = tonumber(redis.call('GET', KEYS[2]))
 if currentRemaining == nil then
+    -- 월초 첫 이벤트면 remaining이 아직 없을 수 있어서 totalQuota로 시작함
     local totalLimit = tonumber(redis.call('HGET', KEYS[1], 'totalQuota') or '0')
     currentRemaining = totalLimit
 end
@@ -125,23 +129,21 @@ if totalLimit > 0 then
     ratio = newRemaining / totalLimit
 end
 
-local alertLevel = nil
+local alertKey = nil
 if ratio < 0.1 then
-    alertLevel = '10'
+    alertKey = KEYS[7]
     status = 'WARNING_10'
 elseif ratio < 0.3 then
-    alertLevel = '30'
+    alertKey = KEYS[6]
     status = 'WARNING_30'
 elseif ratio < 0.5 then
-    alertLevel = '50'
+    alertKey = KEYS[5]
     status = 'WARNING_50'
 end
 
--- 같은 임계치 알림은 한 번만 발행
-if alertLevel then
-    local alertKey = KEYS[5] .. ':' .. alertLevel
+if alertKey then
+    -- 같은 월 같은 임계치는 suffix key 존재 여부로 한 번만 발행함
     local isSent = redis.call('EXISTS', alertKey)
-
     if isSent == 1 then
         status = 'NORMAL'
     else
