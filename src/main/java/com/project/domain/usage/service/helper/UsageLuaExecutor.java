@@ -6,6 +6,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
+import com.dabom.messaging.kafka.error.KafkaMessageProcessingException;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
 import com.project.global.util.LogSanitizer;
 
@@ -21,7 +22,7 @@ public class UsageLuaExecutor {
     private final RedisScript<List<Object>> usageUpdateScript;
     private final LogSanitizer logSanitizer;
 
-    // usage Lua 실행 + 결과 파싱
+    // usage Lua를 실행하고 결과를 파싱한다.
     public UsageUpdateResult execute(UsageLuaCommand command, String eventId) {
         List<Object> result =
                 redisTemplate.execute(
@@ -34,6 +35,11 @@ public class UsageLuaExecutor {
                                 command.alert50Key(),
                                 command.alert30Key(),
                                 command.alert10Key(),
+                                command.manualAlertKey(),
+                                command.appBlockAlertKey(),
+                                command.timeBlockAlertKey(),
+                                command.monthlyLimitAlertKey(),
+                                command.familyQuotaAlertKey(),
                                 command.dedupKey()),
                         String.valueOf(command.usageBytes()),
                         command.currentHhmm(),
@@ -42,20 +48,24 @@ public class UsageLuaExecutor {
 
         if (result == null || result.isEmpty()) {
             log.error("Usage update script returned null. eventId={}", eventId);
-            throw new IllegalStateException("Usage update script returned null");
+            throw new KafkaMessageProcessingException(
+                    "Usage Lua returned null. eventId=%s".formatted(eventId),
+                    new IllegalStateException("Usage update script returned null"));
         }
 
         return parseScriptResult(result, eventId);
     }
 
-    // Lua 결과 파싱
+    // Lua 결과 배열을 UsageUpdateResult로 변환한다.
     private UsageUpdateResult parseScriptResult(List<Object> result, String eventId) {
-        if (result.size() < 7) {
+        if (result.size() < 8) {
             log.error(
                     "Usage update script returned invalid result. eventId={}, result={}",
                     logSanitizer.sanitize(eventId),
                     result);
-            throw new IllegalStateException("Invalid Lua script result");
+            throw new KafkaMessageProcessingException(
+                    "Usage Lua returned invalid result. eventId=%s".formatted(eventId),
+                    new IllegalStateException("Invalid Lua script result"));
         }
 
         long totalUsed = ((Number) result.get(0)).longValue();
@@ -70,14 +80,21 @@ public class UsageLuaExecutor {
                         : Double.parseDouble(userRatioObj.toString());
 
         long monthlyLimit = ((Number) result.get(5)).longValue();
-        // 마지막 값은 duplicate 여부
-        boolean duplicate = ((Number) result.get(6)).longValue() == 1L;
+        boolean shouldNotify = ((Number) result.get(6)).longValue() == 1L;
+        boolean duplicate = ((Number) result.get(7)).longValue() == 1L;
 
         return new UsageUpdateResult(
-                totalUsed, remaining, status, monthlyUsed, userRatio, monthlyLimit, duplicate);
+                totalUsed,
+                remaining,
+                status,
+                monthlyUsed,
+                userRatio,
+                monthlyLimit,
+                shouldNotify,
+                duplicate);
     }
 
-    // Lua 실행에 필요한 인자 묶음
+    // Lua 실행에 필요한 인자를 묶는다.
     public record UsageLuaCommand(
             String infoKey,
             String remainingKey,
@@ -86,6 +103,11 @@ public class UsageLuaExecutor {
             String alert50Key,
             String alert30Key,
             String alert10Key,
+            String manualAlertKey,
+            String appBlockAlertKey,
+            String timeBlockAlertKey,
+            String monthlyLimitAlertKey,
+            String familyQuotaAlertKey,
             String dedupKey,
             long usageBytes,
             String currentHhmm,

@@ -15,11 +15,10 @@ public class RedisKeyGenerator {
     private static final DateTimeFormatter MONTH_SUFFIX_FORMATTER =
             DateTimeFormatter.ofPattern("yyyyMM");
 
-    // 가족 알림 상태 키
-    public String generateFamilyAlertKey(Long familyId, int threshold, LocalDate eventMonth) {
-        return FAMILY_KEY_PREFIX
-                + KEY_SEPARATOR
-                + familyId
+    // 개인 기준 경고 알림 키를 만든다.
+    public String generateFamilyCustomerThresholdAlertKey(
+            Long familyId, Long customerId, int threshold, LocalDate eventMonth) {
+        return familyCustomerPrefix(familyId, customerId)
                 + KEY_SEPARATOR
                 + "alert"
                 + KEY_SEPARATOR
@@ -30,7 +29,38 @@ public class RedisKeyGenerator {
                 + formatMonth(eventMonth);
     }
 
-    // 가족 quota 정보 키
+    // 개인 기준 차단 알림 키를 만든다.
+    public String generateFamilyCustomerBlockAlertKey(
+            Long familyId, Long customerId, String alertType, LocalDate eventMonth) {
+        return familyCustomerPrefix(familyId, customerId)
+                + KEY_SEPARATOR
+                + "alert"
+                + KEY_SEPARATOR
+                + alertType
+                + KEY_SEPARATOR
+                + formatMonth(eventMonth);
+    }
+
+    // 앱 차단 알림은 앱 단위로 분리한다.
+    public String generateFamilyCustomerAppBlockAlertKey(
+            Long familyId, Long customerId, String appId, LocalDate eventMonth) {
+        return familyCustomerPrefix(familyId, customerId)
+                + KEY_SEPARATOR
+                + "alert"
+                + KEY_SEPARATOR
+                + "APP_BLOCK"
+                + KEY_SEPARATOR
+                + appId
+                + KEY_SEPARATOR
+                + formatMonth(eventMonth);
+    }
+
+    // 가족 구성원 set 키를 만든다.
+    public String generateFamilyMembersKey(Long familyId) {
+        return FAMILY_KEY_PREFIX + KEY_SEPARATOR + familyId + KEY_SEPARATOR + "members";
+    }
+
+    // 가족 quota 정보 키를 만든다.
     public String generateFamilyInfoKey(Long familyId, LocalDate eventMonth) {
         return FAMILY_KEY_PREFIX
                 + KEY_SEPARATOR
@@ -41,7 +71,7 @@ public class RedisKeyGenerator {
                 + formatMonth(eventMonth);
     }
 
-    // 가족 잔여 데이터 키
+    // 가족 남은 사용량 키를 만든다.
     public String generateFamilyRemainingKey(Long familyId, LocalDate eventMonth) {
         return FAMILY_KEY_PREFIX
                 + KEY_SEPARATOR
@@ -52,16 +82,10 @@ public class RedisKeyGenerator {
                 + formatMonth(eventMonth);
     }
 
-    // 고객 월별 사용량 키
+    // 개인 월 사용량 키를 만든다.
     public String generateFamilyCustomerMonthlyUsageKey(
             Long familyId, Long customerId, LocalDate eventMonth) {
-        return FAMILY_KEY_PREFIX
-                + KEY_SEPARATOR
-                + familyId
-                + KEY_SEPARATOR
-                + "customer"
-                + KEY_SEPARATOR
-                + customerId
+        return familyCustomerPrefix(familyId, customerId)
                 + KEY_SEPARATOR
                 + "usage"
                 + KEY_SEPARATOR
@@ -70,29 +94,33 @@ public class RedisKeyGenerator {
                 + formatMonth(eventMonth);
     }
 
-    // 고객 정책 제약 키
+    // 개인 제약 조건 키를 만든다.
     public String generateFamilyCustomerConstraintsKey(Long familyId, Long customerId) {
+        return familyCustomerPrefix(familyId, customerId) + KEY_SEPARATOR + "constraints";
+    }
+
+    // policy 이벤트 dedup 키를 만든다.
+    public String generatePolicyEventDedupKey(String eventId, Long customerId) {
+        return POLICY_EVENT_DEDUP_KEY_PREFIX + KEY_SEPARATOR + eventId + KEY_SEPARATOR + customerId;
+    }
+
+    // usage 이벤트 dedup 키를 만든다.
+    public String generateUsageEventDedupKey(String eventId) {
+        return USAGE_EVENT_DEDUP_KEY_PREFIX + KEY_SEPARATOR + eventId;
+    }
+
+    // family-customer 공통 prefix를 만든다.
+    private String familyCustomerPrefix(Long familyId, Long customerId) {
         return FAMILY_KEY_PREFIX
                 + KEY_SEPARATOR
                 + familyId
                 + KEY_SEPARATOR
                 + "customer"
                 + KEY_SEPARATOR
-                + customerId
-                + KEY_SEPARATOR
-                + "constraints";
+                + customerId;
     }
 
-    // policy 이벤트 dedup 키
-    public String generatePolicyEventDedupKey(String eventId, Long customerId) {
-        return POLICY_EVENT_DEDUP_KEY_PREFIX + KEY_SEPARATOR + eventId + KEY_SEPARATOR + customerId;
-    }
-
-    // usage-event dedup 키
-    public String generateUsageEventDedupKey(String eventId) {
-        return USAGE_EVENT_DEDUP_KEY_PREFIX + KEY_SEPARATOR + eventId;
-    }
-
+    // 월 suffix를 공통 형식으로 만든다.
     private String formatMonth(LocalDate eventMonth) {
         return eventMonth.format(MONTH_SUFFIX_FORMATTER);
     }
