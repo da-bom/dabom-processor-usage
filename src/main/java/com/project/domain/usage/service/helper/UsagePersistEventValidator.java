@@ -2,8 +2,8 @@ package com.project.domain.usage.service.helper;
 
 import org.springframework.stereotype.Component;
 
-import com.dabom.messaging.kafka.event.dto.usage.UsagePersistPayload;
 import com.project.domain.usage.enums.UsagePersistProcessResult;
+import com.project.domain.usage.service.dto.UsagePersistPayload;
 import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;
@@ -18,13 +18,13 @@ public class UsagePersistEventValidator {
 
     public boolean isValidPayload(UsagePersistPayload payload, String eventId, String recordKey) {
         if (payload == null) {
-            log.warn("usage-persist payload is null. recordKey={}", recordKey);
+            log.warn("usage payload is null. recordKey={}", recordKey);
             return false;
         }
 
         if (payload.originEventId() == null || payload.originEventId().isBlank()) {
             log.warn(
-                    "usage-persist originEventId is empty. eventId={}, familyId={}, customerId={}",
+                    "usage originEventId is empty. eventId={}, familyId={}, customerId={}",
                     logSanitizer.sanitize(eventId),
                     payload.familyId(),
                     payload.customerId());
@@ -33,7 +33,7 @@ public class UsagePersistEventValidator {
 
         if (payload.familyId() == null || payload.customerId() == null) {
             log.warn(
-                    "usage-persist family/customer is invalid. eventId={}, originEventId={},"
+                    "usage family/customer is invalid. eventId={}, originEventId={},"
                             + " familyId={}, customerId={}",
                     logSanitizer.sanitize(eventId),
                     logSanitizer.sanitize(payload.originEventId()),
@@ -44,8 +44,7 @@ public class UsagePersistEventValidator {
 
         if (payload.bytesUsed() == null || payload.bytesUsed() <= 0) {
             log.warn(
-                    "usage-persist bytesUsed is invalid. eventId={}, originEventId={},"
-                            + " bytesUsed={}",
+                    "usage bytesUsed is invalid. eventId={}, originEventId={}," + " bytesUsed={}",
                     logSanitizer.sanitize(eventId),
                     logSanitizer.sanitize(payload.originEventId()),
                     payload.bytesUsed());
@@ -56,7 +55,7 @@ public class UsagePersistEventValidator {
             UsagePersistProcessResult.from(payload.processResult());
         } catch (IllegalArgumentException e) {
             log.warn(
-                    "usage-persist processResult is invalid. eventId={}, originEventId={},"
+                    "usage processResult is invalid. eventId={}, originEventId={},"
                             + " processResult={}",
                     logSanitizer.sanitize(eventId),
                     logSanitizer.sanitize(payload.originEventId()),

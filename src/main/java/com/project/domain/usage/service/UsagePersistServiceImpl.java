@@ -7,10 +7,10 @@ import java.time.format.DateTimeParseException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.dabom.messaging.kafka.event.dto.EventEnvelope;
-import com.dabom.messaging.kafka.event.dto.usage.UsagePersistPayload;
+import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
 import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.usage.enums.UsagePersistProcessResult;
+import com.project.domain.usage.service.dto.UsagePersistPayload;
 import com.project.domain.usage.service.helper.CustomerQuotaWriter;
 import com.project.domain.usage.service.helper.FamilyQuotaWriter;
 import com.project.domain.usage.service.helper.UsagePersistEventValidator;
@@ -35,25 +35,36 @@ public class UsagePersistServiceImpl implements UsagePersistService {
     private final FamilyQuotaWriter familyQuotaWriter;
     private final LogSanitizer logSanitizer;
 
-    // usage-persist 처리의 전체 흐름을 조율
+    // usage-events 처리 결과를 DB 정산으로 직접 반영한다.
+    @Override
     @Transactional
-    public void persist(EventEnvelope<UsagePersistPayload> envelope, String recordKey) {
-        UsagePersistPayload payload = envelope.payload();
-        String eventId = envelope.eventId();
+    public void persistFromUsageEvent(
+            String eventId, String eventTime, UsagePayload usagePayload, String processResult) {
+        UsagePersistPayload payload =
+                new UsagePersistPayload(
+                        eventId,
+                        usagePayload.familyId(),
+                        usagePayload.customerId(),
+                        usagePayload.bytesUsed(),
+                        usagePayload.appId(),
+                        processResult,
+                        eventTime);
 
-        // 1) payload 계약 검증
+        persistInternal(payload, eventId, String.valueOf(usagePayload.familyId()));
+    }
+
+    // 검증 후 usage_record, quota, family usage를 정산 규칙에 맞게 반영한다.
+    private void persistInternal(UsagePersistPayload payload, String eventId, String recordKey) {
         if (!usagePersistEventValidator.isValidPayload(payload, eventId, recordKey)) {
-            return;
-        }
-        if (payload == null) {
             return;
         }
 
         String originEventId = payload.originEventId();
-        // 2) family-customer 소속 관계 검증
+
+        // 가족-구성원 관계가 유효하지 않으면 정산을 중단한다.
         if (!isValidFamilyMember(payload.familyId(), payload.customerId())) {
             log.warn(
-                    "Skip usage-persist due to invalid family-customer relation. eventId={},"
+                    "Skip usage persistence due to invalid family-customer relation. eventId={},"
                             + " originEventId={}, familyId={}, customerId={}",
                     logSanitizer.sanitize(eventId),
                     logSanitizer.sanitize(originEventId),
@@ -62,34 +73,33 @@ public class UsagePersistServiceImpl implements UsagePersistService {
             return;
         }
 
-        // 3) 월 기준 계산 + 처리 결과 해석
         LocalDate currentMonth = resolveCurrentMonth(payload.eventTime());
-        UsagePersistProcessResult processResult =
-                UsagePersistProcessResult.from(payload.processResult());
+        UsagePersistProcessResult result = UsagePersistProcessResult.from(payload.processResult());
 
-        // 차단 이벤트는 usage_record를 남기지 않고 차단 상태만 반영한다.
-        if (processResult.isBlocked()) {
+        // 차단 이벤트는 usage_record를 만들지 않고 차단 상태만 반영한다.
+        if (result.isBlocked()) {
             customerQuotaWriter.persistBlockedQuota(
-                    payload, currentMonth, eventId, originEventId, processResult.blockReason());
+                    payload, currentMonth, eventId, originEventId, result.blockReason());
             return;
         }
 
-        // usage_record 유니크 충돌이면 이미 처리된 이벤트라 quota 반영도 생략한다.
+        // usage_record가 이미 있으면 이미 처리된 이벤트로 본다.
         if (!usageRecordWriter.persistUsageRecord(payload, eventId, originEventId)) {
             return;
         }
 
-        // 4) 허용 이벤트의 월 누적 반영
         customerQuotaWriter.persistAllowedQuota(payload, currentMonth, eventId, originEventId);
         familyQuotaWriter.persistAllowedQuota(
                 payload.familyId(), currentMonth, payload.bytesUsed(), eventId, originEventId);
     }
 
+    // 현재 가족의 유효한 구성원인지 확인한다.
     private boolean isValidFamilyMember(Long familyId, Long customerId) {
         return familyMemberRepository.existsByFamilyIdAndCustomerIdAndDeletedAtIsNull(
                 familyId, customerId);
     }
 
+    // 이벤트 시각을 정산 월로 변환하고 이상 값이면 현재 월로 보정한다.
     private LocalDate resolveCurrentMonth(String eventTime) {
         LocalDate currentMonth = LocalDate.now(TimeConstants.ASIA_SEOUL).withDayOfMonth(1);
         if (eventTime == null || eventTime.isBlank()) {
@@ -101,6 +111,8 @@ public class UsagePersistServiceImpl implements UsagePersistService {
                             .atZone(TimeConstants.ASIA_SEOUL)
                             .toLocalDate()
                             .withDayOfMonth(1);
+
+            // 허용 범위를 벗어난 월은 잘못된 이벤트 시각으로 보고 현재 월로 보정한다.
             if (isOutsideAllowedMonthWindow(parsedMonth, currentMonth)) {
                 log.warn(
                         "Suspicious eventTime month. Fallback to current month. eventTime={},"
@@ -122,8 +134,8 @@ public class UsagePersistServiceImpl implements UsagePersistService {
         }
     }
 
+    // 정산 허용 범위를 벗어난 월인지 확인한다.
     private boolean isOutsideAllowedMonthWindow(LocalDate parsedMonth, LocalDate currentMonth) {
-        // 과거 1개월까지만 허용하고 미래 월은 허용하지 않는다.
         LocalDate minMonth = currentMonth.minusMonths(ALLOWED_PAST_MONTHS);
         LocalDate maxMonth = currentMonth.plusMonths(ALLOWED_FUTURE_MONTHS);
         return parsedMonth.isBefore(minMonth) || parsedMonth.isAfter(maxMonth);
