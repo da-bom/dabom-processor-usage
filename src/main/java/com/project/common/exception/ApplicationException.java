@@ -1,6 +1,6 @@
-package com.project.global.exception;
+package com.project.common.exception;
 
-import com.project.global.exception.code.BaseErrorCode;
+import com.project.common.exception.code.BaseErrorCode;
 
 public class ApplicationException extends BaseException {
 

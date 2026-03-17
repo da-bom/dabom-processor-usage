@@ -1,4 +1,4 @@
-package com.project.global.config;
+package com.project.common.config;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;

@@ -30,9 +30,9 @@ import com.dabom.messaging.kafka.error.KafkaMessageProcessingException;
 import com.dabom.messaging.kafka.event.KafkaEventMessageSupport;
 import com.dabom.messaging.kafka.event.dto.EventEnvelope;
 import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
+import com.project.common.util.LogSanitizer;
 import com.project.domain.usage.service.UsageSyncService;
 import com.project.domain.usage.service.helper.UsageEventValidator;
-import com.project.global.util.LogSanitizer;
 
 @ExtendWith(MockitoExtension.class)
 class UsageEventsConsumerTest {

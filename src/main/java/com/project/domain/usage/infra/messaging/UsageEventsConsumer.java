@@ -12,9 +12,9 @@ import com.dabom.messaging.kafka.event.consumer.KafkaEventConsumer;
 import com.dabom.messaging.kafka.event.dto.EventEnvelope;
 import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.project.common.util.LogSanitizer;
 import com.project.domain.usage.service.UsageSyncService;
 import com.project.domain.usage.service.helper.UsageEventValidator;
-import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

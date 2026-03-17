@@ -26,8 +26,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
 import com.dabom.messaging.kafka.error.KafkaMessageProcessingException;
+import com.project.common.util.LogSanitizer;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
-import com.project.global.util.LogSanitizer;
 
 @ExtendWith(MockitoExtension.class)
 class UsageLuaExecutorTest {

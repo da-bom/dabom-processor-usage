@@ -5,7 +5,7 @@ import java.util.Map;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
-import com.project.global.util.RedisKeyGenerator;
+import com.project.common.util.RedisKeyGenerator;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

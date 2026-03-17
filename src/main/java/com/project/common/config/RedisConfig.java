@@ -1,4 +1,4 @@
-package com.project.global.config;
+package com.project.common.config;
 
 import java.util.List;
 

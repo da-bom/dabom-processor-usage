@@ -5,10 +5,10 @@ import java.time.LocalDate;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
+import com.project.common.util.LogSanitizer;
 import com.project.domain.customer.entity.CustomerQuota;
 import com.project.domain.customer.repository.CustomerQuotaRepository;
 import com.project.domain.usage.service.dto.UsagePersistPayload;
-import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
