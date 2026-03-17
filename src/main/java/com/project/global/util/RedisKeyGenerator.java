@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 public class RedisKeyGenerator {
 
     private static final String KEY_SEPARATOR = ":";
+    private static final String ALERT_SEGMENT = "alert";
     private static final String FAMILY_KEY_PREFIX = "family";
     private static final String POLICY_EVENT_DEDUP_KEY_PREFIX = "event:dedup:policy";
     private static final String USAGE_EVENT_DEDUP_KEY_PREFIX = "event:dedup:usage";
@@ -20,7 +21,7 @@ public class RedisKeyGenerator {
             Long familyId, Long customerId, int threshold, LocalDate eventMonth) {
         return familyCustomerPrefix(familyId, customerId)
                 + KEY_SEPARATOR
-                + "alert"
+                + ALERT_SEGMENT
                 + KEY_SEPARATOR
                 + "THRESHOLD"
                 + KEY_SEPARATOR
@@ -34,7 +35,7 @@ public class RedisKeyGenerator {
             Long familyId, Long customerId, String alertType, LocalDate eventMonth) {
         return familyCustomerPrefix(familyId, customerId)
                 + KEY_SEPARATOR
-                + "alert"
+                + ALERT_SEGMENT
                 + KEY_SEPARATOR
                 + alertType
                 + KEY_SEPARATOR
@@ -46,7 +47,7 @@ public class RedisKeyGenerator {
             Long familyId, Long customerId, String appId, LocalDate eventMonth) {
         return familyCustomerPrefix(familyId, customerId)
                 + KEY_SEPARATOR
-                + "alert"
+                + ALERT_SEGMENT
                 + KEY_SEPARATOR
                 + "APP_BLOCK"
                 + KEY_SEPARATOR
