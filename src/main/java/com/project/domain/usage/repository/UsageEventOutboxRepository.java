@@ -1,6 +1,5 @@
 package com.project.domain.usage.repository;
 
-import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,8 +12,6 @@ import com.project.domain.usage.entity.UsageEventOutbox;
 public interface UsageEventOutboxRepository extends JpaRepository<UsageEventOutbox, Long> {
 
     Optional<UsageEventOutbox> findByEventId(String eventId);
-
-    List<UsageEventOutbox> findByEventIdOrderByIdAsc(String eventId);
 
     @Modifying
     @Query(

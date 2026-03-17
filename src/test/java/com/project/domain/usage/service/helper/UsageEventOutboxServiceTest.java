@@ -1,7 +1,6 @@
 package com.project.domain.usage.service.helper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -9,8 +8,6 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -28,7 +25,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.domain.usage.entity.UsageEventOutbox;
 import com.project.domain.usage.enums.UsageOutboxStatus;
 import com.project.domain.usage.repository.UsageEventOutboxRepository;
-import com.project.global.common.TimeConstants;
 
 @ExtendWith(MockitoExtension.class)
 class UsageEventOutboxServiceTest {
@@ -36,24 +32,6 @@ class UsageEventOutboxServiceTest {
     @InjectMocks private UsageEventOutboxService usageEventOutboxService;
     @Mock private UsageEventOutboxRepository usageEventOutboxRepository;
     @Spy private ObjectMapper objectMapper = new ObjectMapper();
-
-    @Test
-    @DisplayName("dispatch 후보 조회는 PUBLISH_PENDING만 포함한다")
-    void findDispatchCandidatesByEventId_FiltersPendingOnly() {
-        UsageEventOutbox pending = row("evt_1", UsageOutboxStatus.PUBLISH_PENDING, null);
-        UsageEventOutbox failed =
-                row("evt_1", UsageOutboxStatus.FAILED, LocalDateTime.now(TimeConstants.ASIA_SEOUL));
-
-        given(usageEventOutboxRepository.findByEventIdOrderByIdAsc("evt_1"))
-                .willReturn(List.of(pending, failed));
-
-        List<UsageEventOutbox> candidates =
-                usageEventOutboxService.findDispatchCandidatesByEventId("evt_1");
-
-        assertEquals(1, candidates.size());
-        assertTrue(candidates.contains(pending));
-        assertFalse(candidates.contains(failed));
-    }
 
     @Test
     @DisplayName("notification 대상이면 PUBLISH_PENDING row를 보장한다")
@@ -135,18 +113,5 @@ class UsageEventOutboxServiceTest {
         assertTrue(found.isPresent());
         assertEquals(20L, found.get().outboxId());
         assertEquals(NotificationType.THRESHOLD_ALERT, found.get().payload().type());
-    }
-
-    private UsageEventOutbox row(
-            String eventId, UsageOutboxStatus status, LocalDateTime nextRetryAt) {
-        return UsageEventOutbox.builder()
-                .eventId(eventId)
-                .familyId(100L)
-                .customerId(1L)
-                .status(status)
-                .payloadJson("{}")
-                .retryCount(status == UsageOutboxStatus.FAILED ? 1 : 0)
-                .nextRetryAt(nextRetryAt)
-                .build();
     }
 }

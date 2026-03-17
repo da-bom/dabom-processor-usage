@@ -84,40 +84,4 @@ public class UsageEventOutbox extends BaseEntity {
         this.nextRetryAt = nextRetryAt;
         this.lastError = lastError;
     }
-
-    // 알림 발행 대상일 때만 PUBLISH_PENDING row를 만든다.
-    public static UsageEventOutbox publishPending(
-            String eventId, Long familyId, Long customerId, String payloadJson) {
-        return UsageEventOutbox.builder()
-                .eventId(eventId)
-                .familyId(familyId)
-                .customerId(customerId)
-                .status(UsageOutboxStatus.PUBLISH_PENDING)
-                .payloadJson(payloadJson)
-                .retryCount(0)
-                .build();
-    }
-
-    // 같은 eventId pending row가 이미 있으면 최신 payload로 덮어쓴다.
-    public void refreshPending(String payloadJson) {
-        this.status = UsageOutboxStatus.PUBLISH_PENDING;
-        this.payloadJson = payloadJson;
-        this.nextRetryAt = null;
-        this.lastError = null;
-    }
-
-    // Kafka publish 성공 시 SENT로 확정한다.
-    public void markSent() {
-        this.status = UsageOutboxStatus.SENT;
-        this.nextRetryAt = null;
-        this.lastError = null;
-    }
-
-    // 배치 재시도 후에도 실패하면 FAILED와 다음 재시도 정보를 남긴다.
-    public void markFailed(String lastError, LocalDateTime nextRetryAt) {
-        this.status = UsageOutboxStatus.FAILED;
-        this.retryCount += 1;
-        this.lastError = lastError;
-        this.nextRetryAt = nextRetryAt;
-    }
 }
