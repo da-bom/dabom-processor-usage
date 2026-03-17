@@ -3,12 +3,12 @@ package com.project.domain.policy.service.helper;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.project.domain.policy.helper.PolicyConstraintMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.domain.policy.enums.PolicyType;
+import com.project.domain.policy.helper.PolicyConstraintMapper;
 
 class PolicyConstraintMapperTest {
     private final PolicyConstraintMapper mapper = new PolicyConstraintMapper(new ObjectMapper());
