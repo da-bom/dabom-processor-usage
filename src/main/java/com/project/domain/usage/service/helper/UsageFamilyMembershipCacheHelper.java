@@ -73,7 +73,8 @@ public class UsageFamilyMembershipCacheHelper {
 
         stringRedisTemplate.opsForSet().add(membersKey, memberIds);
         stringRedisTemplate.expire(membersKey, membershipCacheTtlSeconds, TimeUnit.SECONDS);
-        return stringRedisTemplate.opsForSet().isMember(membersKey, String.valueOf(customerId));
+        return Boolean.TRUE.equals(
+                stringRedisTemplate.opsForSet().isMember(membersKey, String.valueOf(customerId)));
     }
 
     // 캐시 불일치 시 DB fallback 결과를 Redis에 반영한다.
