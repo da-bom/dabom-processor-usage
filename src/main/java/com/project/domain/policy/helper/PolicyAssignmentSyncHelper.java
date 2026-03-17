@@ -111,7 +111,7 @@ public class PolicyAssignmentSyncHelper {
     private void applyMonthlyLimitConstraint(
             Map<String, Object> rules, PolicyConstraintRedisHash constraints) {
         // limitBytes(ERD) -> LIMIT:DATA:MONTHLY(Redis)
-        Long limitBytes = toPositiveLong(rules.get("limitBytes"));
+        Long limitBytes = toPositiveLong(rules.get(PolicyConstraintMapper.LIMIT_BYTES));
         if (limitBytes == null) {
             return;
         }
@@ -122,8 +122,8 @@ public class PolicyAssignmentSyncHelper {
     private void applyTimeBlockConstraint(
             Map<String, Object> rules, PolicyConstraintRedisHash constraints) {
         // start/end(ERD, HH:mm) -> BLOCK:TIME(Redis, HHMM-HHMM)
-        String start = toHhmm(rules.get("start"));
-        String end = toHhmm(rules.get("end"));
+        String start = toHhmm(rules.get(PolicyConstraintMapper.START));
+        String end = toHhmm(rules.get(PolicyConstraintMapper.END));
 
         if (start != null && end != null) {
             constraints.putTimeBlockRange(start + "-" + end);
@@ -134,7 +134,7 @@ public class PolicyAssignmentSyncHelper {
     private void applyManualBlockConstraint(
             Map<String, Object> rules, PolicyConstraintRedisHash constraints) {
         // reason 값이 존재하면 접근 차단 활성화로 간주
-        if (rules.get("reason") == null) {
+        if (rules.get(PolicyConstraintMapper.REASON) == null) {
             return;
         }
         constraints.putManualBlock();
@@ -144,7 +144,7 @@ public class PolicyAssignmentSyncHelper {
     private void applyAppBlockConstraint(
             Map<String, Object> rules, PolicyConstraintRedisHash constraints) {
         // blockedApps 배열의 각 appId를 BLOCK:APP:{appId}=1 제약으로 반영
-        Object blockedAppsObj = rules.get("blockedApps");
+        Object blockedAppsObj = rules.get(PolicyConstraintMapper.BLOCKED_APPS);
         if (!(blockedAppsObj instanceof List<?> blockedApps)) {
             return;
         }
@@ -168,9 +168,6 @@ public class PolicyAssignmentSyncHelper {
             return new LinkedHashMap<>();
         }
     }
-
-    // assignment의 시간 정보를 epoch millis 버전으로 변환
-    // version를 기반으로 한 충돌 검증은 더 이상 필요합니다. 워밍업 시점의 덮어쓰기만 남습니다.
 
     // 양수 long 값만 허용하고 나머지는 null로 처리
     private Long toPositiveLong(Object value) {
