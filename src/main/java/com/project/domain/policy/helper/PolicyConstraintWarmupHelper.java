@@ -1,4 +1,4 @@
-package com.project.domain.policy.service.helper;
+package com.project.domain.policy.helper;
 
 import java.util.Map;
 

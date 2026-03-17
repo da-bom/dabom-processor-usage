@@ -1,4 +1,4 @@
-package com.project.domain.policy.service.helper;
+package com.project.domain.policy.helper;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,14 +11,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.project.domain.policy.constant.PolicyRuleKeyConstants;
 import com.project.domain.policy.entity.Policy;
 import com.project.domain.policy.entity.PolicyAssignment;
 import com.project.domain.policy.enums.PolicyType;
 import com.project.domain.policy.infra.cache.dto.PolicyConstraintRedisHash;
 import com.project.domain.policy.repository.PolicyAssignmentRepository;
 import com.project.domain.policy.repository.PolicyRepository;
-import com.project.global.common.TimeConstants;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -81,10 +79,8 @@ public class PolicyAssignmentSyncHelper {
 
         Policy policy = policyById.get(assignment.getPolicyId());
         Map<String, Object> rules = parseRulesToMap(assignment.getRules());
-        long assignmentVersion = resolveAssignmentVersion(assignment);
-
         // ERD 표준: policyType + rules JSON 스키마를 Redis constraints로 변환
-        applyErdRulesByPolicyType(policy.getPolicyType(), rules, constraints, assignmentVersion);
+        applyErdRulesByPolicyType(policy.getPolicyType(), rules, constraints);
     }
 
     // 제약 계산 대상인지(활성 + 유효 policy 존재) 판별
@@ -97,15 +93,13 @@ public class PolicyAssignmentSyncHelper {
     private void applyErdRulesByPolicyType(
             PolicyType policyType,
             Map<String, Object> rules,
-            PolicyConstraintRedisHash constraints,
-            long assignmentVersion) {
+            PolicyConstraintRedisHash constraints) {
         // policy type마다 rules JSON 스키마가 다르므로 전용 변환기로 분기
         switch (policyType) {
-            case MONTHLY_LIMIT ->
-                    applyMonthlyLimitConstraint(rules, constraints, assignmentVersion);
-            case TIME_BLOCK -> applyTimeBlockConstraint(rules, constraints, assignmentVersion);
-            case MANUAL_BLOCK -> applyManualBlockConstraint(rules, constraints, assignmentVersion);
-            case APP_BLOCK -> applyAppBlockConstraint(rules, constraints, assignmentVersion);
+            case MONTHLY_LIMIT -> applyMonthlyLimitConstraint(rules, constraints);
+            case TIME_BLOCK -> applyTimeBlockConstraint(rules, constraints);
+            case MANUAL_BLOCK -> applyManualBlockConstraint(rules, constraints);
+            case APP_BLOCK -> applyAppBlockConstraint(rules, constraints);
             default ->
                     log.warn(
                             "Unsupported policy type for ERD rules conversion. policyType={}",
@@ -115,50 +109,42 @@ public class PolicyAssignmentSyncHelper {
 
     // 월 제한 정책의 rules를 LIMIT:DATA:MONTHLY 제약으로 변환
     private void applyMonthlyLimitConstraint(
-            Map<String, Object> rules,
-            PolicyConstraintRedisHash constraints,
-            long assignmentVersion) {
+            Map<String, Object> rules, PolicyConstraintRedisHash constraints) {
         // limitBytes(ERD) -> LIMIT:DATA:MONTHLY(Redis)
-        Long limitBytes = toPositiveLong(rules.get(PolicyRuleKeyConstants.LIMIT_BYTES));
+        Long limitBytes = toPositiveLong(rules.get("limitBytes"));
         if (limitBytes == null) {
             return;
         }
-        constraints.putMonthlyLimit(limitBytes, assignmentVersion);
+        constraints.putMonthlyLimit(limitBytes);
     }
 
     // 시간대 차단 정책의 rules를 시작/종료 제약으로 변환
     private void applyTimeBlockConstraint(
-            Map<String, Object> rules,
-            PolicyConstraintRedisHash constraints,
-            long assignmentVersion) {
+            Map<String, Object> rules, PolicyConstraintRedisHash constraints) {
         // start/end(ERD, HH:mm) -> BLOCK:TIME(Redis, HHMM-HHMM)
-        String start = toHhmm(rules.get(PolicyRuleKeyConstants.START));
-        String end = toHhmm(rules.get(PolicyRuleKeyConstants.END));
+        String start = toHhmm(rules.get("start"));
+        String end = toHhmm(rules.get("end"));
 
         if (start != null && end != null) {
-            constraints.putTimeBlockRange(start + "-" + end, assignmentVersion);
+            constraints.putTimeBlockRange(start + "-" + end);
         }
     }
 
     // 수동 차단 정책의 rules를 접근 차단 제약으로 변환
     private void applyManualBlockConstraint(
-            Map<String, Object> rules,
-            PolicyConstraintRedisHash constraints,
-            long assignmentVersion) {
+            Map<String, Object> rules, PolicyConstraintRedisHash constraints) {
         // reason 값이 존재하면 접근 차단 활성화로 간주
-        if (rules.get(PolicyRuleKeyConstants.REASON) == null) {
+        if (rules.get("reason") == null) {
             return;
         }
-        constraints.putManualBlock(assignmentVersion);
+        constraints.putManualBlock();
     }
 
     // 앱 차단 배열을 개별 BLOCK:APP:{appId} 제약들로 확장
     private void applyAppBlockConstraint(
-            Map<String, Object> rules,
-            PolicyConstraintRedisHash constraints,
-            long assignmentVersion) {
+            Map<String, Object> rules, PolicyConstraintRedisHash constraints) {
         // blockedApps 배열의 각 appId를 BLOCK:APP:{appId}=1 제약으로 반영
-        Object blockedAppsObj = rules.get(PolicyRuleKeyConstants.BLOCKED_APPS);
+        Object blockedAppsObj = rules.get("blockedApps");
         if (!(blockedAppsObj instanceof List<?> blockedApps)) {
             return;
         }
@@ -167,7 +153,7 @@ public class PolicyAssignmentSyncHelper {
                 .map(String::valueOf)
                 .map(appId -> appId.trim().toLowerCase(Locale.ROOT))
                 .filter(appId -> !appId.isBlank())
-                .forEach(appId -> constraints.putBlockedApp(appId, assignmentVersion));
+                .forEach(appId -> constraints.putBlockedApp(appId));
     }
 
     // rules JSON 문자열을 Map으로 파싱하고 실패 시 빈 맵으로 대체
@@ -184,23 +170,7 @@ public class PolicyAssignmentSyncHelper {
     }
 
     // assignment의 시간 정보를 epoch millis 버전으로 변환
-    private long resolveAssignmentVersion(PolicyAssignment assignment) {
-        if (assignment.getUpdatedAt() != null) {
-            return assignment
-                    .getUpdatedAt()
-                    .atZone(TimeConstants.ASIA_SEOUL)
-                    .toInstant()
-                    .toEpochMilli();
-        }
-        if (assignment.getCreatedAt() != null) {
-            return assignment
-                    .getCreatedAt()
-                    .atZone(TimeConstants.ASIA_SEOUL)
-                    .toInstant()
-                    .toEpochMilli();
-        }
-        return System.currentTimeMillis();
-    }
+    // version를 기반으로 한 충돌 검증은 더 이상 필요합니다. 워밍업 시점의 덮어쓰기만 남습니다.
 
     // 양수 long 값만 허용하고 나머지는 null로 처리
     private Long toPositiveLong(Object value) {
