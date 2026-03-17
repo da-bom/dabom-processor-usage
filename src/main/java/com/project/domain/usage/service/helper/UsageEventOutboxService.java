@@ -35,7 +35,14 @@ public class UsageEventOutboxService {
         usageEventOutboxRepository.insertPublishPendingIgnore(
                 eventId, payload.familyId(), payload.customerId(), payloadJson);
         usageEventOutboxRepository.refreshPendingPayload(eventId, payloadJson);
-        return findPendingDispatchByEventId(eventId);
+        return usageEventOutboxRepository
+                .findByEventId(eventId)
+                .filter(row -> row.getStatus() == UsageOutboxStatus.PUBLISH_PENDING)
+                .map(
+                        row ->
+                                new PendingNotificationDispatch(
+                                        row.getId(),
+                                        fromJson(row.getPayloadJson(), NotificationPayload.class)));
     }
 
     // eventId 기준으로 아직 발행되지 않은 notification payload를 찾는다.
