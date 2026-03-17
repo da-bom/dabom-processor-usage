@@ -32,15 +32,6 @@ public class RedisConfig {
 
     @Bean
     @SuppressWarnings("unchecked")
-    public DefaultRedisScript<List<String>> policyConstraintUpdateScript() {
-        DefaultRedisScript<List<String>> script = new DefaultRedisScript<>();
-        script.setLocation(new ClassPathResource("lua/policy_constraint_update.lua"));
-        script.setResultType((Class<List<String>>) (Class<?>) List.class);
-        return script;
-    }
-
-    @Bean
-    @SuppressWarnings("unchecked")
     public RedisScript<List<Object>> usageUpdateScript() {
         DefaultRedisScript<List<Object>> script = new DefaultRedisScript<>();
         script.setLocation(new ClassPathResource("lua/usage_update.lua"));
