@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service;
 
 import com.project.domain.usage.repository.UsageRecordRepository;
 import com.project.domain.usage.service.dto.UsagePersistPayload;
-import com.project.global.common.TimeConstants;
+import com.project.global.config.TimeConfig;
 import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;
@@ -50,17 +50,15 @@ public class UsageRecordWriter {
     private LocalDateTime resolveEventTime(String eventTime) {
         // event_time이 없거나 파싱 실패면 현재 KST 시각을 사용한다.
         if (eventTime == null || eventTime.isBlank()) {
-            return LocalDateTime.now(TimeConstants.ASIA_SEOUL);
+            return LocalDateTime.now(TimeConfig.ASIA_SEOUL);
         }
         try {
-            return LocalDateTime.parse(eventTime)
-                    .atZone(TimeConstants.ASIA_SEOUL)
-                    .toLocalDateTime();
+            return LocalDateTime.parse(eventTime).atZone(TimeConfig.ASIA_SEOUL).toLocalDateTime();
         } catch (DateTimeParseException e) {
             log.warn(
                     "Invalid eventTime format. Fallback to now(KST). eventTime={}",
                     logSanitizer.sanitize(eventTime));
-            return LocalDateTime.now(TimeConstants.ASIA_SEOUL);
+            return LocalDateTime.now(TimeConfig.ASIA_SEOUL);
         }
     }
 }

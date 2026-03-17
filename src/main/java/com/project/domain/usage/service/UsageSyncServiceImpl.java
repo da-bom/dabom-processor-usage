@@ -17,7 +17,7 @@ import com.dabom.messaging.kafka.error.KafkaMessageProcessingException;
 import com.dabom.messaging.kafka.event.dto.notification.NotificationPayload;
 import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
 import com.dabom.messaging.kafka.metrics.KafkaMetrics;
-import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
+import com.project.domain.policy.helper.PolicyConstraintWarmupHelper;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
 import com.project.domain.usage.service.helper.UsageEventOutboxService;
 import com.project.domain.usage.service.helper.UsageFamilyMembershipCacheHelper;
@@ -26,7 +26,7 @@ import com.project.domain.usage.service.helper.UsageNotificationPayloadMapper;
 import com.project.domain.usage.service.helper.UsageNotificationPublisher;
 import com.project.domain.usage.service.helper.UsageProcessingDecisionMapper;
 import com.project.domain.usage.service.helper.UsageRedisWarmupHelper;
-import com.project.global.common.TimeConstants;
+import com.project.global.config.TimeConfig;
 import com.project.global.util.LogSanitizer;
 import com.project.global.util.RedisKeyGenerator;
 
@@ -245,7 +245,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
                 log.debug("Failed to parse eventTime: {}", logSanitizer.sanitize(eventTime));
             }
         }
-        return LocalDateTime.now(TimeConstants.ASIA_SEOUL);
+        return LocalDateTime.now(TimeConfig.ASIA_SEOUL);
     }
 
     // 앱 차단 키 비교에 사용하도록 appId를 정규화한다.
