@@ -2,9 +2,9 @@ package com.project.domain.usage.service.helper;
 
 import org.springframework.stereotype.Component;
 
+import com.project.common.util.LogSanitizer;
 import com.project.domain.usage.enums.UsagePersistProcessResult;
 import com.project.domain.usage.service.dto.UsagePersistPayload;
-import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

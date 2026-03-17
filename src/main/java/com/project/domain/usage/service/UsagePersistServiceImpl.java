@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
+import com.project.common.config.TimeConfig;
+import com.project.common.util.LogSanitizer;
 import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.usage.enums.UsagePersistProcessResult;
 import com.project.domain.usage.service.dto.UsagePersistPayload;
@@ -15,8 +17,6 @@ import com.project.domain.usage.service.helper.CustomerQuotaWriter;
 import com.project.domain.usage.service.helper.FamilyQuotaWriter;
 import com.project.domain.usage.service.helper.UsagePersistEventValidator;
 import com.project.domain.usage.service.helper.UsageRecordWriter;
-import com.project.global.common.TimeConstants;
-import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -101,14 +101,14 @@ public class UsagePersistServiceImpl implements UsagePersistService {
 
     // 이벤트 시각을 정산 월로 변환하고 이상 값이면 현재 월로 보정한다.
     private LocalDate resolveCurrentMonth(String eventTime) {
-        LocalDate currentMonth = LocalDate.now(TimeConstants.ASIA_SEOUL).withDayOfMonth(1);
+        LocalDate currentMonth = LocalDate.now(TimeConfig.ASIA_SEOUL).withDayOfMonth(1);
         if (eventTime == null || eventTime.isBlank()) {
             return currentMonth;
         }
         try {
             LocalDate parsedMonth =
                     LocalDateTime.parse(eventTime)
-                            .atZone(TimeConstants.ASIA_SEOUL)
+                            .atZone(TimeConfig.ASIA_SEOUL)
                             .toLocalDate()
                             .withDayOfMonth(1);
 

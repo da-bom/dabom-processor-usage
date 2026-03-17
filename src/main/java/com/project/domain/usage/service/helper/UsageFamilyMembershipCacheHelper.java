@@ -9,8 +9,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import com.dabom.messaging.kafka.error.KafkaMessageProcessingException;
+import com.project.common.util.RedisKeyGenerator;
 import com.project.domain.family.repository.FamilyMemberRepository;
-import com.project.global.util.RedisKeyGenerator;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

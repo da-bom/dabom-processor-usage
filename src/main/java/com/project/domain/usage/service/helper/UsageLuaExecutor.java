@@ -7,8 +7,8 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
 import com.dabom.messaging.kafka.error.KafkaMessageProcessingException;
+import com.project.common.util.LogSanitizer;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
-import com.project.global.util.LogSanitizer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

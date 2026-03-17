@@ -19,13 +19,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
+import com.project.common.util.LogSanitizer;
 import com.project.domain.family.repository.FamilyMemberRepository;
 import com.project.domain.usage.service.dto.UsagePersistPayload;
 import com.project.domain.usage.service.helper.CustomerQuotaWriter;
 import com.project.domain.usage.service.helper.FamilyQuotaWriter;
 import com.project.domain.usage.service.helper.UsagePersistEventValidator;
 import com.project.domain.usage.service.helper.UsageRecordWriter;
-import com.project.global.util.LogSanitizer;
 
 @ExtendWith(MockitoExtension.class)
 class UsagePersistServiceImplTest {
