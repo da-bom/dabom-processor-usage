@@ -1,7 +1,9 @@
 package com.project.domain.usage.service.helper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -23,6 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
+import com.dabom.messaging.kafka.error.KafkaMessageProcessingException;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
 import com.project.global.util.LogSanitizer;
 
@@ -40,10 +43,10 @@ class UsageLuaExecutorTest {
         lenient()
                 .when(logSanitizer.sanitize(nullable(String.class)))
                 .thenAnswer(
-                        invocation -> {
-                            String raw = invocation.getArgument(0);
-                            return raw == null ? "null" : raw;
-                        });
+                        invocation ->
+                                invocation.getArgument(0) == null
+                                        ? "null"
+                                        : invocation.getArgument(0));
     }
 
     @Test
@@ -55,9 +58,14 @@ class UsageLuaExecutorTest {
                         "family:100:remaining:202603",
                         "monthlyKey",
                         "constraintsKey",
-                        "family:100:alert:THRESHOLD:50:202603",
-                        "family:100:alert:THRESHOLD:30:202603",
-                        "family:100:alert:THRESHOLD:10:202603",
+                        "family:100:customer:1:alert:THRESHOLD:50:202603",
+                        "family:100:customer:1:alert:THRESHOLD:30:202603",
+                        "family:100:customer:1:alert:THRESHOLD:10:202603",
+                        "family:100:customer:1:alert:MANUAL:202603",
+                        "family:100:customer:1:alert:APP_BLOCK:com.youtube.app:202603",
+                        "family:100:customer:1:alert:TIME_BLOCK:202603",
+                        "family:100:customer:1:alert:MONTHLY_LIMIT_EXCEEDED:202603",
+                        "family:100:customer:1:alert:FAMILY_QUOTA_EXCEEDED:202603",
                         "event:dedup:usage:evt_1",
                         1024L,
                         "2230",
@@ -72,7 +80,7 @@ class UsageLuaExecutorTest {
                                 any(Object.class),
                                 any(Object.class),
                                 any(Object.class)))
-                .willReturn(List.of(5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L, 0L));
+                .willReturn(List.of(5000L, 5000L, "WARNING_10", 1000L, 0.1, 10000L, 1L, 0L));
 
         UsageUpdateResult result = usageLuaExecutor.execute(command, "evt_1");
 
@@ -86,32 +94,28 @@ class UsageLuaExecutorTest {
                         eq("com.youtube.app"),
                         eq("60"));
 
+        assertEquals(13, keysCaptor.getValue().size());
         assertEquals(
-                List.of(
-                        "family:100:info:202603",
-                        "family:100:remaining:202603",
-                        "monthlyKey",
-                        "constraintsKey",
-                        "family:100:alert:THRESHOLD:50:202603",
-                        "family:100:alert:THRESHOLD:30:202603",
-                        "family:100:alert:THRESHOLD:10:202603",
-                        "event:dedup:usage:evt_1"),
-                keysCaptor.getValue());
+                "family:100:customer:1:alert:FAMILY_QUOTA_EXCEEDED:202603",
+                keysCaptor.getValue().get(11));
+        assertEquals("event:dedup:usage:evt_1", keysCaptor.getValue().get(12));
         assertEquals(5000L, result.totalUsed());
         assertEquals(5000L, result.remaining());
-        assertEquals("NORMAL", result.status());
+        assertEquals("WARNING_10", result.status());
         assertEquals(1000L, result.monthlyUsed());
         assertEquals(0.1, result.userRatio());
         assertEquals(10000L, result.monthlyLimit());
-        assertEquals(false, result.duplicate());
+        assertTrue(result.shouldNotify());
+        assertFalse(result.duplicate());
     }
 
     @Test
-    @DisplayName("duplicate 플래그를 파싱한다")
+    @DisplayName("duplicate와 notify 플래그를 함께 파싱한다")
     void execute_ParseDuplicateFlag() {
         UsageLuaExecutor.UsageLuaCommand command =
                 new UsageLuaExecutor.UsageLuaCommand(
-                        "a", "b", "c", "d", "e", "f", "g", "dup", 1L, "0000", "", 60L);
+                        "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "dup", 1L,
+                        "0000", "", 60L);
         given(
                         redisTemplate.execute(
                                 eq(usageUpdateScript),
@@ -120,12 +124,13 @@ class UsageLuaExecutorTest {
                                 any(Object.class),
                                 any(Object.class),
                                 any(Object.class)))
-                .willReturn(List.of(100L, 900L, "DUPLICATE", 50L, 0.05, -1L, 1L));
+                .willReturn(List.of(100L, 900L, "APP_BLOCK", 50L, 0.05, -1L, 0L, 1L));
 
         UsageUpdateResult result = usageLuaExecutor.execute(command, "evt_dup");
 
-        assertEquals(true, result.duplicate());
-        assertEquals("DUPLICATE", result.status());
+        assertTrue(result.duplicate());
+        assertFalse(result.shouldNotify());
+        assertEquals("APP_BLOCK", result.status());
     }
 
     @Test
@@ -133,7 +138,8 @@ class UsageLuaExecutorTest {
     void execute_NullResult() {
         UsageLuaExecutor.UsageLuaCommand command =
                 new UsageLuaExecutor.UsageLuaCommand(
-                        "a", "b", "c", "d", "e", "f", "g", "dup", 1L, "0000", "", 60L);
+                        "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "dup", 1L,
+                        "0000", "", 60L);
         given(
                         redisTemplate.execute(
                                 eq(usageUpdateScript),
@@ -144,7 +150,9 @@ class UsageLuaExecutorTest {
                                 any(Object.class)))
                 .willReturn(null);
 
-        assertThrows(IllegalStateException.class, () -> usageLuaExecutor.execute(command, "evt_2"));
+        assertThrows(
+                KafkaMessageProcessingException.class,
+                () -> usageLuaExecutor.execute(command, "evt_2"));
     }
 
     @Test
@@ -152,7 +160,8 @@ class UsageLuaExecutorTest {
     void execute_InvalidResultSize() {
         UsageLuaExecutor.UsageLuaCommand command =
                 new UsageLuaExecutor.UsageLuaCommand(
-                        "a", "b", "c", "d", "e", "f", "g", "dup", 1L, "0000", "", 60L);
+                        "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "dup", 1L,
+                        "0000", "", 60L);
         given(
                         redisTemplate.execute(
                                 eq(usageUpdateScript),
@@ -163,6 +172,8 @@ class UsageLuaExecutorTest {
                                 any(Object.class)))
                 .willReturn(List.of(1L, 2L, "NORMAL"));
 
-        assertThrows(IllegalStateException.class, () -> usageLuaExecutor.execute(command, "evt_3"));
+        assertThrows(
+                KafkaMessageProcessingException.class,
+                () -> usageLuaExecutor.execute(command, "evt_3"));
     }
 }

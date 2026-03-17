@@ -69,11 +69,7 @@ class PolicyConstraintSyncServiceImplTest {
                         10L, 20L, PolicyConstraintKeyConstants.LIMIT_DATA_MONTHLY, "1024", true);
         EventEnvelope<PolicyUpdatedPayload> envelope =
                 new EventEnvelope<>(
-                        "evt-1",
-                        KafkaEventTypes.POLICY_UPDATED,
-                        null,
-                        LocalDateTime.now(),
-                        payload);
+                        "evt-1", KafkaEventTypes.POLICY_UPDATED, LocalDateTime.now(), payload);
 
         given(policyEventValidator.isValidPayload(payload, "evt-1", "record-1")).willReturn(true);
         given(
@@ -105,11 +101,7 @@ class PolicyConstraintSyncServiceImplTest {
                         10L, 20L, PolicyConstraintKeyConstants.LIMIT_DATA_MONTHLY, "1024", true);
         EventEnvelope<PolicyUpdatedPayload> envelope =
                 new EventEnvelope<>(
-                        "evt-2",
-                        KafkaEventTypes.POLICY_UPDATED,
-                        null,
-                        LocalDateTime.now(),
-                        payload);
+                        "evt-2", KafkaEventTypes.POLICY_UPDATED, LocalDateTime.now(), payload);
 
         given(policyEventValidator.isValidPayload(payload, "evt-2", "record-2")).willReturn(true);
         given(
@@ -156,11 +148,7 @@ class PolicyConstraintSyncServiceImplTest {
                         true);
         EventEnvelope<PolicyUpdatedPayload> envelope =
                 new EventEnvelope<>(
-                        "evt-3",
-                        KafkaEventTypes.POLICY_UPDATED,
-                        null,
-                        LocalDateTime.now(),
-                        payload);
+                        "evt-3", KafkaEventTypes.POLICY_UPDATED, LocalDateTime.now(), payload);
 
         given(policyEventValidator.isValidPayload(payload, "evt-3", "record-3")).willReturn(true);
         given(policyEventValidator.isAllowedPolicyKey(PolicyConstraintKeyConstants.BLOCK_APP))

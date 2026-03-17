@@ -7,17 +7,24 @@ import java.time.format.DateTimeParseException;
 import java.util.Locale;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Service;
 
 import com.dabom.messaging.kafka.contract.KafkaConsumerGroups;
 import com.dabom.messaging.kafka.contract.KafkaEventTypes;
 import com.dabom.messaging.kafka.contract.KafkaTopics;
+import com.dabom.messaging.kafka.error.KafkaMessageProcessingException;
+import com.dabom.messaging.kafka.event.dto.notification.NotificationPayload;
 import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
 import com.dabom.messaging.kafka.metrics.KafkaMetrics;
 import com.project.domain.policy.service.helper.PolicyConstraintWarmupHelper;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
-import com.project.domain.usage.service.helper.UsageEventPublisher;
+import com.project.domain.usage.service.helper.UsageEventOutboxService;
+import com.project.domain.usage.service.helper.UsageFamilyMembershipCacheHelper;
 import com.project.domain.usage.service.helper.UsageLuaExecutor;
+import com.project.domain.usage.service.helper.UsageNotificationPayloadMapper;
+import com.project.domain.usage.service.helper.UsageNotificationPublisher;
+import com.project.domain.usage.service.helper.UsageProcessingDecisionMapper;
 import com.project.domain.usage.service.helper.UsageRedisWarmupHelper;
 import com.project.global.common.TimeConstants;
 import com.project.global.util.LogSanitizer;
@@ -38,25 +45,31 @@ public class UsageSyncServiceImpl implements UsageSyncService {
     private final UsageRedisWarmupHelper usageRedisWarmupHelper;
     private final PolicyConstraintWarmupHelper policyConstraintWarmupHelper;
     private final UsageLuaExecutor usageLuaExecutor;
-    private final UsageEventPublisher usageEventPublisher;
+    private final UsagePersistService usagePersistService;
+    private final UsageEventOutboxService usageEventOutboxService;
+    private final UsageProcessingDecisionMapper usageProcessingDecisionMapper;
+    private final UsageNotificationPayloadMapper usageNotificationPayloadMapper;
+    private final UsageNotificationPublisher usageNotificationPublisher;
+    private final UsageFamilyMembershipCacheHelper usageFamilyMembershipCacheHelper;
     private final LogSanitizer logSanitizer;
     private final KafkaMetrics kafkaMetrics;
 
     @Value("${app.kafka.dedup.usage-ttl-seconds}")
     private long dedupTtlSeconds;
 
+    // usage-events 1건을 검증하고 Redis/Lua/DB 정산/알림 발행까지 처리한다.
     @Override
     public void syncUsage(String eventId, String eventTime, UsagePayload payload) {
+        long familyId = payload.familyId();
+        long customerId = payload.customerId();
 
-        Long familyId = payload.familyId();
-        Long customerId = payload.customerId();
-        long usageBytes = payload.bytesUsed();
+        // 잘못된 family-customer 조합은 초입에서 바로 차단한다.
+        validateFamilyMembership(eventId, familyId, customerId);
 
-        // 1) eventTime 해석 + 월 키 기준 계산
         LocalDateTime resolvedEventDateTime = resolveEventDateTime(eventTime);
         LocalDate eventMonth = resolvedEventDateTime.toLocalDate().withDayOfMonth(1);
 
-        // 2) Lua 실행에 필요한 Redis 키 생성
+        String normalizedAppId = normalizeAppId(payload.appId());
         String infoKey = redisKeyGenerator.generateFamilyInfoKey(familyId, eventMonth);
         String remainingKey = redisKeyGenerator.generateFamilyRemainingKey(familyId, eventMonth);
         String monthlyKey =
@@ -64,12 +77,120 @@ public class UsageSyncServiceImpl implements UsageSyncService {
                         familyId, customerId, eventMonth);
         String constraintsKey =
                 redisKeyGenerator.generateFamilyCustomerConstraintsKey(familyId, customerId);
-        String alert50Key = redisKeyGenerator.generateFamilyAlertKey(familyId, 50, eventMonth);
-        String alert30Key = redisKeyGenerator.generateFamilyAlertKey(familyId, 30, eventMonth);
-        String alert10Key = redisKeyGenerator.generateFamilyAlertKey(familyId, 10, eventMonth);
+        String alert50Key =
+                redisKeyGenerator.generateFamilyCustomerThresholdAlertKey(
+                        familyId, customerId, 50, eventMonth);
+        String alert30Key =
+                redisKeyGenerator.generateFamilyCustomerThresholdAlertKey(
+                        familyId, customerId, 30, eventMonth);
+        String alert10Key =
+                redisKeyGenerator.generateFamilyCustomerThresholdAlertKey(
+                        familyId, customerId, 10, eventMonth);
+        String manualAlertKey =
+                redisKeyGenerator.generateFamilyCustomerBlockAlertKey(
+                        familyId, customerId, "MANUAL", eventMonth);
+        String appBlockAlertKey =
+                redisKeyGenerator.generateFamilyCustomerAppBlockAlertKey(
+                        familyId, customerId, normalizedAppId, eventMonth);
+        String timeBlockAlertKey =
+                redisKeyGenerator.generateFamilyCustomerBlockAlertKey(
+                        familyId, customerId, "TIME_BLOCK", eventMonth);
+        String monthlyLimitAlertKey =
+                redisKeyGenerator.generateFamilyCustomerBlockAlertKey(
+                        familyId, customerId, "MONTHLY_LIMIT_EXCEEDED", eventMonth);
+        String familyQuotaAlertKey =
+                redisKeyGenerator.generateFamilyCustomerBlockAlertKey(
+                        familyId, customerId, "FAMILY_QUOTA_EXCEEDED", eventMonth);
         String dedupKey = redisKeyGenerator.generateUsageEventDedupKey(eventId);
 
-        // 3) Redis warmup 보장
+        // Redis 상태가 준비되지 않으면 Lua 판단을 태우지 않는다.
+        ensureWarmupOrThrow(
+                eventId, familyId, customerId, eventMonth, infoKey, remainingKey, monthlyKey);
+
+        UsageUpdateResult parsed =
+                usageLuaExecutor.execute(
+                        new UsageLuaExecutor.UsageLuaCommand(
+                                infoKey,
+                                remainingKey,
+                                monthlyKey,
+                                constraintsKey,
+                                alert50Key,
+                                alert30Key,
+                                alert10Key,
+                                manualAlertKey,
+                                appBlockAlertKey,
+                                timeBlockAlertKey,
+                                monthlyLimitAlertKey,
+                                familyQuotaAlertKey,
+                                dedupKey,
+                                payload.bytesUsed(),
+                                resolvedEventDateTime.format(HHMM_FORMATTER),
+                                normalizedAppId,
+                                dedupTtlSeconds),
+                        eventId);
+
+        log.debug(
+                "Usage synced: family={}, customer={}, status={}, notify={}, duplicate={}",
+                familyId,
+                customerId,
+                parsed.status(),
+                parsed.shouldNotify(),
+                parsed.duplicate());
+
+        if (parsed.duplicate()) {
+            kafkaMetrics.incrementDedupHit(
+                    KafkaTopics.USAGE_EVENTS,
+                    KafkaConsumerGroups.DABOM_PROCESSOR_USAGE_MAIN,
+                    KafkaEventTypes.DATA_USAGE);
+            log.info(
+                    "Duplicate usage event. eventId={}, familyId={}, customerId={}",
+                    logSanitizer.sanitize(eventId),
+                    familyId,
+                    customerId);
+        }
+
+        // Lua 상태는 중앙 매퍼에서만 해석한다.
+        UsageProcessingDecisionMapper.UsageProcessingDecision decision =
+                usageProcessingDecisionMapper.fromLuaStatus(parsed.status());
+
+        // DB 정산은 usage_record unique와 quota 갱신 규칙으로 멱등하게 재진입한다.
+        usagePersistService.persistFromUsageEvent(
+                eventId, eventTime, payload, decision.persistProcessResult());
+
+        boolean publishNotification = decision.publishNotification() && parsed.shouldNotify();
+        if (!publishNotification) {
+            dispatchPendingNotificationIfExists(eventId);
+            return;
+        }
+
+        NotificationPayload notificationPayload =
+                usageNotificationPayloadMapper.toNotificationPayload(
+                        eventId, resolvedEventDateTime, payload, decision.notificationStatus());
+
+        usageEventOutboxService
+                .stageAfterRedisApplied(eventId, notificationPayload, true)
+                .ifPresent(this::publishAsync);
+    }
+
+    // family-customer 관계가 틀리면 invalid payload로 간주하고 중단한다.
+    private void validateFamilyMembership(String eventId, long familyId, long customerId) {
+        if (usageFamilyMembershipCacheHelper.isValidFamilyCustomer(familyId, customerId)) {
+            return;
+        }
+        throw new IllegalArgumentException(
+                "Invalid family-customer relation. eventId=%s familyId=%d customerId=%d"
+                        .formatted(eventId, familyId, customerId));
+    }
+
+    // warmup 실패는 일시 장애로 보고 retryable 예외로 전파한다.
+    private void ensureWarmupOrThrow(
+            String eventId,
+            long familyId,
+            long customerId,
+            LocalDate eventMonth,
+            String infoKey,
+            String remainingKey,
+            String monthlyKey) {
         boolean familyInfoRedisWarmup =
                 usageRedisWarmupHelper.ensureFamilyInfoCached(familyId, eventMonth, infoKey);
         boolean familyRemainingRedisWarmup =
@@ -83,55 +204,39 @@ public class UsageSyncServiceImpl implements UsageSyncService {
         if (!familyInfoRedisWarmup
                 || !familyRemainingRedisWarmup
                 || !customerMonthlyUsageRedisWarmup) {
-            log.error("Redis Warmup is Failed. eventId={}", logSanitizer.sanitize(eventId));
-            return;
+            log.error("Redis warmup failed. eventId={}", logSanitizer.sanitize(eventId));
+            throw new KafkaMessageProcessingException(
+                    "Redis warmup failed. eventId=%s familyId=%d customerId=%d"
+                            .formatted(eventId, familyId, customerId),
+                    new IllegalStateException("Redis warmup failed"));
         }
-
-        String currentHhmm = resolvedEventDateTime.format(HHMM_FORMATTER);
-        String normalizedAppId = normalizeAppId(payload.appId());
-
-        // 4) Lua로 정책 판정 + 사용량 반영 + dedup 검사 수행
-        UsageUpdateResult parsed =
-                usageLuaExecutor.execute(
-                        new UsageLuaExecutor.UsageLuaCommand(
-                                infoKey,
-                                remainingKey,
-                                monthlyKey,
-                                constraintsKey,
-                                alert50Key,
-                                alert30Key,
-                                alert10Key,
-                                dedupKey,
-                                usageBytes,
-                                currentHhmm,
-                                normalizedAppId,
-                                dedupTtlSeconds),
-                        eventId);
-        log.debug(
-                "Usage Synced: family={}, customer={}, status={}",
-                familyId,
-                customerId,
-                parsed.status());
-
-        // 5) duplicate면 후속 publish 없이 종료
-        if (parsed.duplicate()) {
-            kafkaMetrics.incrementDedupHit(
-                    KafkaTopics.USAGE_EVENTS,
-                    KafkaConsumerGroups.DABOM_PROCESSOR_USAGE_MAIN,
-                    KafkaEventTypes.DATA_USAGE);
-            log.info(
-                    "Skip duplicated usage event. eventId={}, familyId={}, customerId={}",
-                    logSanitizer.sanitize(eventId),
-                    familyId,
-                    customerId);
-            return;
-        }
-
-        // 6) downstream 이벤트 발행
-        usageEventPublisher.publish(
-                new UsageEventPublisher.UsageEventContext(eventId, eventTime, payload, parsed));
     }
 
+    // 이미 만들어진 pending notification이 있으면 다시 즉시 발행을 시도한다.
+    private void dispatchPendingNotificationIfExists(String eventId) {
+        usageEventOutboxService.findPendingDispatchByEventId(eventId).ifPresent(this::publishAsync);
+    }
+
+    // notification은 비동기로 발행하고 성공 시에만 SENT로 마감한다.
+    private void publishAsync(UsageEventOutboxService.PendingNotificationDispatch pending) {
+        usageNotificationPublisher
+                .publishAsync(pending.payload())
+                .whenComplete(
+                        (SendResult<String, String> ignored, Throwable throwable) -> {
+                            if (throwable == null) {
+                                usageEventOutboxService.markSent(pending.outboxId());
+                                return;
+                            }
+
+                            log.warn(
+                                    "Notification publish deferred to batch retry. outboxId={},"
+                                            + " reason={}",
+                                    pending.outboxId(),
+                                    throwable.getMessage());
+                        });
+    }
+
+    // eventTime을 파싱하고 실패하면 현재 시각으로 보정한다.
     private LocalDateTime resolveEventDateTime(String eventTime) {
         if (eventTime != null && !eventTime.isBlank()) {
             try {
@@ -143,12 +248,11 @@ public class UsageSyncServiceImpl implements UsageSyncService {
         return LocalDateTime.now(TimeConstants.ASIA_SEOUL);
     }
 
+    // 앱 차단 키 비교에 사용하도록 appId를 정규화한다.
     private String normalizeAppId(String appId) {
         if (appId == null) {
             return EMPTY_APP_ID;
         }
-
-        // app 차단 정책 키와 비교할 수 있게 정규화
         String normalized = appId.trim().toLowerCase(Locale.ROOT);
         return normalized.isEmpty() ? EMPTY_APP_ID : normalized;
     }

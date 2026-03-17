@@ -3,6 +3,7 @@ package com.project.domain.usage.enums;
 import java.util.Arrays;
 
 public enum UsagePersistProcessResult {
+    APP_BLOCK(true, "APP_BLOCK"),
     MANUAL(true, "MANUAL"),
     TIME_BLOCK(true, "TIME_BLOCK"),
     MONTHLY_LIMIT_EXCEEDED(true, "MONTHLY_LIMIT_EXCEEDED"),
