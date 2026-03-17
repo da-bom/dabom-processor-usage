@@ -153,7 +153,7 @@ public class PolicyAssignmentSyncHelper {
                 .map(String::valueOf)
                 .map(appId -> appId.trim().toLowerCase(Locale.ROOT))
                 .filter(appId -> !appId.isBlank())
-                .forEach(appId -> constraints.putBlockedApp(appId));
+                .forEach(constraints::putBlockedApp);
     }
 
     // rules JSON 문자열을 Map으로 파싱하고 실패 시 빈 맵으로 대체
