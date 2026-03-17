@@ -9,7 +9,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.project.domain.usage.entity.UsageEventOutbox;
-import com.project.domain.usage.enums.UsageOutboxStatus;
 
 public interface UsageEventOutboxRepository extends JpaRepository<UsageEventOutbox, Long> {
 
@@ -17,48 +16,33 @@ public interface UsageEventOutboxRepository extends JpaRepository<UsageEventOutb
 
     List<UsageEventOutbox> findByEventIdOrderByIdAsc(String eventId);
 
-    boolean existsByEventIdAndStatus(String eventId, UsageOutboxStatus status);
-
     @Modifying
     @Query(
             value =
                     """
                     insert ignore into usage_event_outbox
-                    (event_id, family_id, customer_id, status, retry_count, created_at, updated_at)
-                    values (:eventId, :familyId, :customerId, 'PREPARED', 0, now(), now())
+                    (event_id, family_id, customer_id, status, payload_json, retry_count, created_at, updated_at)
+                    values (:eventId, :familyId, :customerId, 'PUBLISH_PENDING', :payloadJson, 0, now(), now())
                     """,
             nativeQuery = true)
-    int insertPreparedIgnore(
+    int insertPublishPendingIgnore(
             @Param("eventId") String eventId,
             @Param("familyId") long familyId,
-            @Param("customerId") long customerId);
+            @Param("customerId") long customerId,
+            @Param("payloadJson") String payloadJson);
 
     @Modifying
     @Query(
             """
             update UsageEventOutbox o
-            set o.status = com.project.domain.usage.enums.UsageOutboxStatus.PUBLISH_PENDING,
-                o.payloadJson = :payloadJson,
+            set o.payloadJson = :payloadJson,
                 o.nextRetryAt = null,
                 o.lastError = null
             where o.eventId = :eventId
-              and o.status = com.project.domain.usage.enums.UsageOutboxStatus.PREPARED
+              and o.status = com.project.domain.usage.enums.UsageOutboxStatus.PUBLISH_PENDING
             """)
-    int markPublishPendingIfPrepared(
+    int refreshPendingPayload(
             @Param("eventId") String eventId, @Param("payloadJson") String payloadJson);
-
-    @Modifying
-    @Query(
-            """
-            update UsageEventOutbox o
-            set o.status = com.project.domain.usage.enums.UsageOutboxStatus.SKIPPED,
-                o.payloadJson = null,
-                o.nextRetryAt = null,
-                o.lastError = null
-            where o.eventId = :eventId
-              and o.status = com.project.domain.usage.enums.UsageOutboxStatus.PREPARED
-            """)
-    int markSkippedIfPrepared(@Param("eventId") String eventId);
 
     @Modifying
     @Query(

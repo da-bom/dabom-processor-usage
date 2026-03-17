@@ -3,6 +3,7 @@ package com.project.domain.usage.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.BDDMockito.given;
@@ -135,7 +136,7 @@ class UsageSyncServiceImplTest {
     }
 
     @Test
-    @DisplayName("가족 구성원 관계가 틀리면 초입에서 즉시 중단한다")
+    @DisplayName("가족 구성원 관계가 다르면 초입에서 즉시 중단한다")
     void syncUsage_InvalidFamilyMembershipThrows() {
         UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
         given(usageFamilyMembershipCacheHelper.isValidFamilyCustomer(100L, 1L)).willReturn(false);
@@ -146,9 +147,8 @@ class UsageSyncServiceImplTest {
                         usageSyncServiceImpl.syncUsage(
                                 "evt_invalid", "2026-03-04T12:34:56", payload));
 
-        verify(usageEventOutboxService, never())
-                .ensurePrepared(any(), any(Long.class), any(Long.class));
         verify(usageLuaExecutor, never()).execute(any(), any());
+        verify(usagePersistService, never()).persistFromUsageEvent(any(), any(), any(), any());
     }
 
     @Test
@@ -168,52 +168,13 @@ class UsageSyncServiceImplTest {
                         usageSyncServiceImpl.syncUsage(
                                 "evt_membership_retry", "2026-03-04T12:34:56", payload));
 
-        verify(usageEventOutboxService, never())
-                .ensurePrepared(any(), any(Long.class), any(Long.class));
         verify(usageLuaExecutor, never()).execute(any(), any());
     }
 
     @Test
-    @DisplayName("중복 이벤트이고 PREPARED가 없으면 pending notification만 다시 발행한다")
-    void syncUsage_DuplicateDispatchesPendingOnly() {
+    @DisplayName("중복 이벤트여도 DB 정산은 멱등하게 다시 진입한다")
+    void syncUsage_DuplicateStillReentersPersist() {
         String eventId = "evt_dup";
-        String eventTime = "2026-03-04T12:34:56";
-        LocalDate eventMonth = LocalDate.of(2026, 3, 1);
-        UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
-        NotificationPayload notificationPayload =
-                new NotificationPayload(
-                        100L, 1L, NotificationType.THRESHOLD_ALERT, "title", "message", Map.of());
-
-        stubCommon(100L, 1L, eventMonth, eventId, "appid");
-        given(usageEventOutboxService.hasPreparedRows(eventId)).willReturn(false);
-        given(usageLuaExecutor.execute(any(UsageLuaExecutor.UsageLuaCommand.class), eq(eventId)))
-                .willReturn(
-                        new UsageUpdateResult(
-                                5000L, 5000L, "WARNING_10", 1000L, 0.1, 10000L, true, true));
-        given(usageEventOutboxService.findPendingDispatchByEventId(eventId))
-                .willReturn(
-                        Optional.of(
-                                new UsageEventOutboxService.PendingNotificationDispatch(
-                                        21L, notificationPayload)));
-        given(usageNotificationPublisher.publishAsync(notificationPayload))
-                .willReturn(CompletableFuture.completedFuture(null));
-
-        usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
-
-        verify(usagePersistService, never()).persistFromUsageEvent(any(), any(), any(), any());
-        verify(usageNotificationPublisher).publishAsync(notificationPayload);
-        verify(usageEventOutboxService).markSent(21L);
-        verify(kafkaMetrics)
-                .incrementDedupHit(
-                        KafkaTopics.USAGE_EVENTS,
-                        KafkaConsumerGroups.DABOM_PROCESSOR_USAGE_MAIN,
-                        KafkaEventTypes.DATA_USAGE);
-    }
-
-    @Test
-    @DisplayName("중복 이벤트여도 PREPARED가 남아 있으면 DB 정산과 stage를 다시 진입한다")
-    void syncUsage_DuplicateReentersPersistAndStageWhenPreparedRowsExist() {
-        String eventId = "evt_dup_heal";
         String eventTime = "2026-03-04T12:34:56";
         LocalDate eventMonth = LocalDate.of(2026, 3, 1);
         UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
@@ -225,7 +186,6 @@ class UsageSyncServiceImplTest {
                         100L, 1L, NotificationType.THRESHOLD_ALERT, "title", "message", Map.of());
 
         stubCommon(100L, 1L, eventMonth, eventId, "appid");
-        given(usageEventOutboxService.hasPreparedRows(eventId)).willReturn(true);
         given(usageLuaExecutor.execute(any(UsageLuaExecutor.UsageLuaCommand.class), eq(eventId)))
                 .willReturn(
                         new UsageUpdateResult(
@@ -239,6 +199,45 @@ class UsageSyncServiceImplTest {
                 .willReturn(
                         Optional.of(
                                 new UsageEventOutboxService.PendingNotificationDispatch(
+                                        21L, notificationPayload)));
+        given(usageNotificationPublisher.publishAsync(notificationPayload))
+                .willReturn(CompletableFuture.completedFuture(null));
+
+        usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
+
+        verify(usagePersistService).persistFromUsageEvent(eventId, eventTime, payload, "ALLOWED");
+        verify(kafkaMetrics)
+                .incrementDedupHit(
+                        KafkaTopics.USAGE_EVENTS,
+                        KafkaConsumerGroups.DABOM_PROCESSOR_USAGE_MAIN,
+                        KafkaEventTypes.DATA_USAGE);
+        verify(usageNotificationPublisher).publishAsync(notificationPayload);
+    }
+
+    @Test
+    @DisplayName("중복 이벤트이고 이미 pending notification이 있으면 다시 즉시 발행을 시도한다")
+    void syncUsage_DuplicateRepublishesExistingPendingNotification() {
+        String eventId = "evt_dup_pending";
+        String eventTime = "2026-03-04T12:34:56";
+        LocalDate eventMonth = LocalDate.of(2026, 3, 1);
+        UsagePayload payload = new UsagePayload(100L, 1L, "appId", 1024L, Map.of());
+        UsageProcessingDecisionMapper.UsageProcessingDecision decision =
+                new UsageProcessingDecisionMapper.UsageProcessingDecision(
+                        "ALLOWED", false, "NORMAL");
+        NotificationPayload notificationPayload =
+                new NotificationPayload(
+                        100L, 1L, NotificationType.THRESHOLD_ALERT, "title", "message", Map.of());
+
+        stubCommon(100L, 1L, eventMonth, eventId, "appid");
+        given(usageLuaExecutor.execute(any(UsageLuaExecutor.UsageLuaCommand.class), eq(eventId)))
+                .willReturn(
+                        new UsageUpdateResult(
+                                5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L, false, true));
+        given(usageProcessingDecisionMapper.fromLuaStatus("NORMAL")).willReturn(decision);
+        given(usageEventOutboxService.findPendingDispatchByEventId(eventId))
+                .willReturn(
+                        Optional.of(
+                                new UsageEventOutboxService.PendingNotificationDispatch(
                                         31L, notificationPayload)));
         given(usageNotificationPublisher.publishAsync(notificationPayload))
                 .willReturn(CompletableFuture.completedFuture(null));
@@ -246,12 +245,13 @@ class UsageSyncServiceImplTest {
         usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
 
         verify(usagePersistService).persistFromUsageEvent(eventId, eventTime, payload, "ALLOWED");
+        verify(usageEventOutboxService, never()).stageAfterRedisApplied(any(), any(), anyBoolean());
         verify(usageNotificationPublisher).publishAsync(notificationPayload);
         verify(usageEventOutboxService).markSent(31L);
     }
 
     @Test
-    @DisplayName("알림 dedup에 걸리면 DB 정산만 수행하고 notification은 생략한다")
+    @DisplayName("알림 dedup에 걸리면 DB 정산만 수행하고 outbox는 만들지 않는다")
     void syncUsage_SkipsNotificationWhenShouldNotifyFalse() {
         String eventId = "evt_skip_notify";
         String eventTime = "2026-03-04T12:34:56";
@@ -267,7 +267,7 @@ class UsageSyncServiceImplTest {
                         new UsageUpdateResult(
                                 5000L, 5000L, "APP_BLOCK", 1000L, 0.1, 10000L, false, false));
         given(usageProcessingDecisionMapper.fromLuaStatus("APP_BLOCK")).willReturn(decision);
-        given(usageEventOutboxService.stageAfterRedisApplied(eventId, null, false))
+        given(usageEventOutboxService.findPendingDispatchByEventId(eventId))
                 .willReturn(Optional.empty());
 
         usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
@@ -275,11 +275,12 @@ class UsageSyncServiceImplTest {
         verify(usagePersistService).persistFromUsageEvent(eventId, eventTime, payload, "APP_BLOCK");
         verify(usageNotificationPayloadMapper, never())
                 .toNotificationPayload(any(), any(), any(), any());
+        verify(usageEventOutboxService, never()).stageAfterRedisApplied(any(), any(), anyBoolean());
         verify(usageNotificationPublisher, never()).publishAsync(any());
     }
 
     @Test
-    @DisplayName("NORMAL 이벤트는 notification payload를 만들지 않고 SKIPPED로 끝난다")
+    @DisplayName("NORMAL 이벤트는 notification payload를 만들지 않고 끝난다")
     void syncUsage_NormalEventSkipsPayloadCreation() {
         String eventId = "evt_normal";
         String eventTime = "2026-03-04T12:34:56";
@@ -295,7 +296,7 @@ class UsageSyncServiceImplTest {
                         new UsageUpdateResult(
                                 5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L, false, false));
         given(usageProcessingDecisionMapper.fromLuaStatus("NORMAL")).willReturn(decision);
-        given(usageEventOutboxService.stageAfterRedisApplied(eventId, null, false))
+        given(usageEventOutboxService.findPendingDispatchByEventId(eventId))
                 .willReturn(Optional.empty());
 
         usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
@@ -303,8 +304,7 @@ class UsageSyncServiceImplTest {
         verify(usagePersistService).persistFromUsageEvent(eventId, eventTime, payload, "ALLOWED");
         verify(usageNotificationPayloadMapper, never())
                 .toNotificationPayload(any(), any(), any(), any());
-        verify(usageEventOutboxService).stageAfterRedisApplied(eventId, null, false);
-        verify(usageNotificationPublisher, never()).publishAsync(any());
+        verify(usageEventOutboxService, never()).stageAfterRedisApplied(any(), any(), anyBoolean());
     }
 
     @Test

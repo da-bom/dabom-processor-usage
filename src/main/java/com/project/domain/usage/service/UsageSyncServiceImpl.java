@@ -57,21 +57,19 @@ public class UsageSyncServiceImpl implements UsageSyncService {
     @Value("${app.kafka.dedup.usage-ttl-seconds}")
     private long dedupTtlSeconds;
 
-    // usage-events 1건을 Redis, DB, Outbox, notification 흐름으로 처리한다.
+    // usage-events 1건을 검증하고 Redis/Lua/DB 정산/알림 발행까지 처리한다.
     @Override
     public void syncUsage(String eventId, String eventTime, UsagePayload payload) {
         long familyId = payload.familyId();
         long customerId = payload.customerId();
 
-        // 잘못된 family-customer 조합은 초입에서 차단한다.
+        // 잘못된 family-customer 조합은 초입에서 바로 차단한다.
         validateFamilyMembership(eventId, familyId, customerId);
-
-        // 이후 실패해도 복구 기준점을 잃지 않도록 먼저 PREPARED를 보장한다.
-        usageEventOutboxService.ensurePrepared(eventId, familyId, customerId);
 
         LocalDateTime resolvedEventDateTime = resolveEventDateTime(eventTime);
         LocalDate eventMonth = resolvedEventDateTime.toLocalDate().withDayOfMonth(1);
 
+        String normalizedAppId = normalizeAppId(payload.appId());
         String infoKey = redisKeyGenerator.generateFamilyInfoKey(familyId, eventMonth);
         String remainingKey = redisKeyGenerator.generateFamilyRemainingKey(familyId, eventMonth);
         String monthlyKey =
@@ -93,7 +91,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
                         familyId, customerId, "MANUAL", eventMonth);
         String appBlockAlertKey =
                 redisKeyGenerator.generateFamilyCustomerAppBlockAlertKey(
-                        familyId, customerId, normalizeAppId(payload.appId()), eventMonth);
+                        familyId, customerId, normalizedAppId, eventMonth);
         String timeBlockAlertKey =
                 redisKeyGenerator.generateFamilyCustomerBlockAlertKey(
                         familyId, customerId, "TIME_BLOCK", eventMonth);
@@ -105,13 +103,10 @@ public class UsageSyncServiceImpl implements UsageSyncService {
                         familyId, customerId, "FAMILY_QUOTA_EXCEEDED", eventMonth);
         String dedupKey = redisKeyGenerator.generateUsageEventDedupKey(eventId);
 
+        // Redis 상태가 준비되지 않으면 Lua 판단을 태우지 않는다.
         ensureWarmupOrThrow(
                 eventId, familyId, customerId, eventMonth, infoKey, remainingKey, monthlyKey);
 
-        String currentHhmm = resolvedEventDateTime.format(HHMM_FORMATTER);
-        String normalizedAppId = normalizeAppId(payload.appId());
-
-        // Redis Lua에서 중복 여부와 처리 상태를 한 번에 계산한다.
         UsageUpdateResult parsed =
                 usageLuaExecutor.execute(
                         new UsageLuaExecutor.UsageLuaCommand(
@@ -129,7 +124,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
                                 familyQuotaAlertKey,
                                 dedupKey,
                                 payload.bytesUsed(),
-                                currentHhmm,
+                                resolvedEventDateTime.format(HHMM_FORMATTER),
                                 normalizedAppId,
                                 dedupTtlSeconds),
                         eventId);
@@ -154,39 +149,30 @@ public class UsageSyncServiceImpl implements UsageSyncService {
                     customerId);
         }
 
-        // duplicate라도 PREPARED가 남아 있으면 이전 실패 복구로 보고 재진입한다.
-        boolean hasPreparedRow =
-                parsed.duplicate() && usageEventOutboxService.hasPreparedRows(eventId);
-        if (parsed.duplicate() && !hasPreparedRow) {
+        // Lua 상태는 중앙 매퍼에서만 해석한다.
+        UsageProcessingDecisionMapper.UsageProcessingDecision decision =
+                usageProcessingDecisionMapper.fromLuaStatus(parsed.status());
+
+        // DB 정산은 usage_record unique와 quota 갱신 규칙으로 멱등하게 재진입한다.
+        usagePersistService.persistFromUsageEvent(
+                eventId, eventTime, payload, decision.persistProcessResult());
+
+        boolean publishNotification = decision.publishNotification() && parsed.shouldNotify();
+        if (!publishNotification) {
             dispatchPendingNotificationIfExists(eventId);
             return;
         }
 
-        // Lua 상태는 중앙 매퍼에서만 해석해 DB 정산과 알림 판단을 일치시킨다.
-        UsageProcessingDecisionMapper.UsageProcessingDecision decision =
-                usageProcessingDecisionMapper.fromLuaStatus(parsed.status());
-        boolean publishNotification = decision.publishNotification() && parsed.shouldNotify();
-
-        if (!parsed.duplicate() || hasPreparedRow) {
-            usagePersistService.persistFromUsageEvent(
-                    eventId, eventTime, payload, decision.persistProcessResult());
-        }
-
-        // Outbox에 최종 notification payload를 저장한 뒤 비동기로 발행한다.
         NotificationPayload notificationPayload =
-                publishNotification
-                        ? usageNotificationPayloadMapper.toNotificationPayload(
-                                eventId,
-                                resolvedEventDateTime,
-                                payload,
-                                decision.notificationStatus())
-                        : null;
+                usageNotificationPayloadMapper.toNotificationPayload(
+                        eventId, resolvedEventDateTime, payload, decision.notificationStatus());
+
         usageEventOutboxService
-                .stageAfterRedisApplied(eventId, notificationPayload, publishNotification)
+                .stageAfterRedisApplied(eventId, notificationPayload, true)
                 .ifPresent(this::publishAsync);
     }
 
-    // 잘못된 family-customer 조합은 retry하지 않고 즉시 무시한다.
+    // family-customer 관계가 틀리면 invalid payload로 간주하고 중단한다.
     private void validateFamilyMembership(String eventId, long familyId, long customerId) {
         if (usageFamilyMembershipCacheHelper.isValidFamilyCustomer(familyId, customerId)) {
             return;
@@ -196,7 +182,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
                         .formatted(eventId, familyId, customerId));
     }
 
-    // warmup이 끝나지 않으면 Lua를 실행하지 않고 즉시 중단한다.
+    // warmup 실패는 일시 장애로 보고 retryable 예외로 전파한다.
     private void ensureWarmupOrThrow(
             String eventId,
             long familyId,
@@ -226,12 +212,12 @@ public class UsageSyncServiceImpl implements UsageSyncService {
         }
     }
 
-    // 즉시 발행이 가능한 pending notification이 있으면 다시 보낸다.
+    // 이미 만들어진 pending notification이 있으면 다시 즉시 발행을 시도한다.
     private void dispatchPendingNotificationIfExists(String eventId) {
         usageEventOutboxService.findPendingDispatchByEventId(eventId).ifPresent(this::publishAsync);
     }
 
-    // notification을 비동기로 발행하고 성공 시 SENT로 확정한다.
+    // notification은 비동기로 발행하고 성공 시에만 SENT로 마감한다.
     private void publishAsync(UsageEventOutboxService.PendingNotificationDispatch pending) {
         usageNotificationPublisher
                 .publishAsync(pending.payload())
@@ -250,7 +236,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
                         });
     }
 
-    // 이벤트 시각을 파싱하고 실패하면 현재 시각으로 보정한다.
+    // eventTime을 파싱하고 실패하면 현재 시각으로 보정한다.
     private LocalDateTime resolveEventDateTime(String eventTime) {
         if (eventTime != null && !eventTime.isBlank()) {
             try {
@@ -262,7 +248,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
         return LocalDateTime.now(TimeConstants.ASIA_SEOUL);
     }
 
-    // 앱 차단 비교에 쓰기 쉽게 appId를 정규화한다.
+    // 앱 차단 키 비교에 사용하도록 appId를 정규화한다.
     private String normalizeAppId(String appId) {
         if (appId == null) {
             return EMPTY_APP_ID;

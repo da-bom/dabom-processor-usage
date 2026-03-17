@@ -22,26 +22,23 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(
         name = "usage_event_outbox",
         uniqueConstraints = {
-            @UniqueConstraint(
-                    name = "uk_usage_event_outbox_event_id",
-                    columnNames = {"event_id"})
+            @UniqueConstraint(name = "uk_usage_event_outbox_event_id", columnNames = "event_id")
         },
         indexes = {
-            @Index(name = "idx_usage_outbox_status_retry", columnList = "status,next_retry_at"),
-            @Index(name = "idx_usage_outbox_event_id", columnList = "event_id")
+            @Index(name = "idx_usage_outbox_status_retry", columnList = "status, next_retry_at")
         })
-@Getter
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class UsageEventOutbox extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "event_id", nullable = false)
+    @Column(name = "event_id", nullable = false, length = 191)
     private String eventId;
 
     @Column(name = "family_id", nullable = false)
@@ -51,7 +48,7 @@ public class UsageEventOutbox extends BaseEntity {
     private Long customerId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 32)
+    @Column(name = "status", nullable = false, length = 30)
     private UsageOutboxStatus status;
 
     @Column(name = "payload_json", columnDefinition = "TEXT")
@@ -67,7 +64,8 @@ public class UsageEventOutbox extends BaseEntity {
     private String lastError;
 
     @Builder
-    public UsageEventOutbox(
+    private UsageEventOutbox(
+            Long id,
             String eventId,
             Long familyId,
             Long customerId,
@@ -76,6 +74,7 @@ public class UsageEventOutbox extends BaseEntity {
             int retryCount,
             LocalDateTime nextRetryAt,
             String lastError) {
+        this.id = id;
         this.eventId = eventId;
         this.familyId = familyId;
         this.customerId = customerId;
@@ -86,45 +85,39 @@ public class UsageEventOutbox extends BaseEntity {
         this.lastError = lastError;
     }
 
-    // 최초 복구 기준점 상태를 만든다.
-    public static UsageEventOutbox prepared(String eventId, Long familyId, Long customerId) {
+    // 알림 발행 대상일 때만 PUBLISH_PENDING row를 만든다.
+    public static UsageEventOutbox publishPending(
+            String eventId, Long familyId, Long customerId, String payloadJson) {
         return UsageEventOutbox.builder()
                 .eventId(eventId)
                 .familyId(familyId)
                 .customerId(customerId)
-                .status(UsageOutboxStatus.PREPARED)
+                .status(UsageOutboxStatus.PUBLISH_PENDING)
+                .payloadJson(payloadJson)
                 .retryCount(0)
                 .build();
     }
 
-    // 즉시 발행 또는 배치 복구 대기 상태로 전이한다.
-    public void markPublishPending(String payloadJson) {
+    // 같은 eventId pending row가 이미 있으면 최신 payload로 덮어쓴다.
+    public void refreshPending(String payloadJson) {
         this.status = UsageOutboxStatus.PUBLISH_PENDING;
         this.payloadJson = payloadJson;
         this.nextRetryAt = null;
         this.lastError = null;
     }
 
-    // 알림 비대상으로 종료한다.
-    public void markSkipped() {
-        this.status = UsageOutboxStatus.SKIPPED;
-        this.payloadJson = null;
-        this.nextRetryAt = null;
-        this.lastError = null;
-    }
-
-    // 발행 성공으로 종료한다.
+    // Kafka publish 성공 시 SENT로 확정한다.
     public void markSent() {
         this.status = UsageOutboxStatus.SENT;
         this.nextRetryAt = null;
         this.lastError = null;
     }
 
-    // 배치 서버가 최종 실패로 확정한다.
-    public void markFailed(String message, LocalDateTime nextRetryAt) {
+    // 배치 재시도 후에도 실패하면 FAILED와 다음 재시도 정보를 남긴다.
+    public void markFailed(String lastError, LocalDateTime nextRetryAt) {
         this.status = UsageOutboxStatus.FAILED;
         this.retryCount += 1;
+        this.lastError = lastError;
         this.nextRetryAt = nextRetryAt;
-        this.lastError = message;
     }
 }

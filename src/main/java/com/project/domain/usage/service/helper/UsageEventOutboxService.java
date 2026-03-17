@@ -30,31 +30,19 @@ public class UsageEventOutboxService {
     private final UsageEventOutboxRepository usageEventOutboxRepository;
     private final ObjectMapper objectMapper;
 
-    // 이벤트 단위 Outbox 기본 행을 준비한다.
-    @Transactional
-    public void ensurePrepared(String eventId, long familyId, long customerId) {
-        usageEventOutboxRepository.insertPreparedIgnore(eventId, familyId, customerId);
-    }
-
-    // Redis 처리 결과를 바탕으로 notification 발행 대기 상태를 확정한다.
+    // notification 대상인 경우에만 PUBLISH_PENDING row를 보장한다.
     @Transactional
     public Optional<PendingNotificationDispatch> stageAfterRedisApplied(
             String eventId, NotificationPayload payload, boolean publishNotification) {
         if (!publishNotification) {
-            int skipped = usageEventOutboxRepository.markSkippedIfPrepared(eventId);
-            if (skipped == 1) {
-                return Optional.empty();
-            }
             return Optional.empty();
         }
 
         String payloadJson = toJson(payload);
-        int updated = usageEventOutboxRepository.markPublishPendingIfPrepared(eventId, payloadJson);
-        if (updated == 1) {
-            return findPendingDispatchByEventId(eventId);
-        }
-
-        return Optional.empty();
+        usageEventOutboxRepository.insertPublishPendingIgnore(
+                eventId, payload.familyId(), payload.customerId(), payloadJson);
+        usageEventOutboxRepository.refreshPendingPayload(eventId, payloadJson);
+        return findPendingDispatchByEventId(eventId);
     }
 
     // eventId 기준으로 아직 발행되지 않은 notification payload를 찾는다.
@@ -103,13 +91,6 @@ public class UsageEventOutboxService {
                 LocalDateTime.now(TimeConstants.ASIA_SEOUL)
                         .plusSeconds(resolveBackoffSeconds(row.getRetryCount() + 1));
         row.markFailed(abbreviateError(reason), nextRetryAt);
-    }
-
-    // PREPARED 상태 행이 남아 있는지 확인한다.
-    @Transactional(readOnly = true)
-    public boolean hasPreparedRows(String eventId) {
-        return usageEventOutboxRepository.existsByEventIdAndStatus(
-                eventId, UsageOutboxStatus.PREPARED);
     }
 
     // 저장한 payload_json을 지정한 타입으로 역직렬화한다.

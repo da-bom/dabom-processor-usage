@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import java.time.LocalDateTime;
@@ -55,13 +56,14 @@ class UsageEventOutboxServiceTest {
     }
 
     @Test
-    @DisplayName("notification 대상이면 PREPARED를 PUBLISH_PENDING으로 전이한다")
+    @DisplayName("notification 대상이면 PUBLISH_PENDING row를 보장한다")
     void stageAfterRedisApplied_ToPublishPending() {
         NotificationPayload payload =
                 new NotificationPayload(
                         100L, 1L, NotificationType.THRESHOLD_ALERT, "title", "message", Map.of());
         UsageEventOutbox pending =
                 UsageEventOutbox.builder()
+                        .id(10L)
                         .eventId("evt_2")
                         .familyId(100L)
                         .customerId(1L)
@@ -69,9 +71,12 @@ class UsageEventOutboxServiceTest {
                         .payloadJson(objectMapper.valueToTree(payload).toString())
                         .retryCount(0)
                         .build();
+
         given(
-                        usageEventOutboxRepository.markPublishPendingIfPrepared(
-                                eq("evt_2"), any(String.class)))
+                        usageEventOutboxRepository.insertPublishPendingIgnore(
+                                eq("evt_2"), eq(100L), eq(1L), any(String.class)))
+                .willReturn(1);
+        given(usageEventOutboxRepository.refreshPendingPayload(eq("evt_2"), any(String.class)))
                 .willReturn(1);
         given(usageEventOutboxRepository.findByEventId("evt_2")).willReturn(Optional.of(pending));
 
@@ -80,21 +85,25 @@ class UsageEventOutboxServiceTest {
 
         assertTrue(dispatch.isPresent());
         assertEquals(100L, dispatch.get().payload().familyId());
+        verify(usageEventOutboxRepository)
+                .insertPublishPendingIgnore(eq("evt_2"), eq(100L), eq(1L), any(String.class));
+        verify(usageEventOutboxRepository).refreshPendingPayload(eq("evt_2"), any(String.class));
     }
 
     @Test
-    @DisplayName("notification 비대상이면 PREPARED를 SKIPPED로 전이한다")
-    void stageAfterRedisApplied_ToSkipped() {
+    @DisplayName("notification 비대상이면 outbox row를 만들지 않는다")
+    void stageAfterRedisApplied_WhenNotificationSkipped_ReturnsEmpty() {
         NotificationPayload payload =
                 new NotificationPayload(
                         100L, 1L, NotificationType.THRESHOLD_ALERT, "title", "message", Map.of());
-        given(usageEventOutboxRepository.markSkippedIfPrepared("evt_3")).willReturn(1);
 
         Optional<UsageEventOutboxService.PendingNotificationDispatch> dispatch =
                 usageEventOutboxService.stageAfterRedisApplied("evt_3", payload, false);
 
         assertTrue(dispatch.isEmpty());
-        verify(usageEventOutboxRepository).markSkippedIfPrepared("evt_3");
+        verify(usageEventOutboxRepository, never())
+                .insertPublishPendingIgnore(any(), any(Long.class), any(Long.class), any());
+        verify(usageEventOutboxRepository, never()).refreshPendingPayload(any(), any());
     }
 
     @Test
@@ -110,6 +119,7 @@ class UsageEventOutboxServiceTest {
                         Map.of("threshold", 10));
         UsageEventOutbox pending =
                 UsageEventOutbox.builder()
+                        .id(20L)
                         .eventId("evt_4")
                         .familyId(100L)
                         .customerId(1L)
@@ -123,22 +133,8 @@ class UsageEventOutboxServiceTest {
                 usageEventOutboxService.findPendingDispatchByEventId("evt_4");
 
         assertTrue(found.isPresent());
+        assertEquals(20L, found.get().outboxId());
         assertEquals(NotificationType.THRESHOLD_ALERT, found.get().payload().type());
-    }
-
-    @Test
-    @DisplayName("hasPreparedRows는 PREPARED 존재 여부를 repository에 위임한다")
-    void hasPreparedRows_DelegatesRepository() {
-        given(
-                        usageEventOutboxRepository.existsByEventIdAndStatus(
-                                "evt_5", UsageOutboxStatus.PREPARED))
-                .willReturn(true);
-
-        boolean result = usageEventOutboxService.hasPreparedRows("evt_5");
-
-        assertTrue(result);
-        verify(usageEventOutboxRepository)
-                .existsByEventIdAndStatus("evt_5", UsageOutboxStatus.PREPARED);
     }
 
     private UsageEventOutbox row(
