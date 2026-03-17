@@ -11,10 +11,11 @@
 #
 # GitHub Variables (Settings > Variables > Actions):
 #   - ACR_NAME                : ACR 이름 (예: dabom)
-#   - CONTAINER_APP_NAME      : Container App 이름 (예: dabom-processor-usage)
+#   - CONTAINER_APP_NAME      : Container App 이름 (예: dabom-api-core)
 #   - RESOURCE_GROUP          : 리소스 그룹 이름 (예: dabom-rg)
 #
 # 환경변수는 Container App에 직접 설정 (Azure Portal 또는 CLI)
+# 셋업 가이드: docs/azure-container-apps-setup.md
 # ============================================================================
 
 name: Deploy to Azure Container Apps
@@ -37,10 +38,7 @@ jobs:
   build-and-deploy:
     name: Build & Deploy
     runs-on: ubuntu-latest
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push')
+    if: false  # Azure 계정 종료로 비활성화
 
     steps:
       # ── 1. 빌드 ──
@@ -72,8 +70,8 @@ jobs:
       - name: Build and Push Docker Image
         run: |
           REGISTRY=${{ env.ACR_NAME }}.azurecr.io
-          TAG=$REGISTRY/dabom-processor-usage:${{ github.sha }}
-          LATEST=$REGISTRY/dabom-processor-usage:latest
+          TAG=$REGISTRY/dabom-api-core:${{ github.sha }}
+          LATEST=$REGISTRY/dabom-api-core:latest
           docker build -f Dockerfile.deploy -t $TAG -t $LATEST .
           docker push $TAG
           docker push $LATEST
@@ -84,7 +82,7 @@ jobs:
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ env.ACR_NAME }}.azurecr.io/dabom-processor-usage:${{ github.sha }}
+            --image ${{ env.ACR_NAME }}.azurecr.io/dabom-api-core:${{ github.sha }}
 
       - name: Deployment Summary
         run: |
@@ -94,6 +92,6 @@ jobs:
             --query properties.configuration.ingress.fqdn \
             --output tsv)
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image**: \`${{ env.ACR_NAME }}.azurecr.io/dabom-processor-usage:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: \`${{ env.ACR_NAME }}.azurecr.io/dabom-api-core:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **URL**: https://$FQDN" >> $GITHUB_STEP_SUMMARY
           echo "- **Triggered by**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY

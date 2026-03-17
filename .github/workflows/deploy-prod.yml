@@ -1,0 +1,88 @@
+# ============================================================================
+# Deploy to AWS ECS (production)
+# ============================================================================
+# 역할:
+#   - main 브랜치 푸시 시 자동으로 컨테이너 이미지를 빌드
+#   - ECR에 Docker 이미지 Push (커밋 SHA + latest 태그)
+#   - ECS 서비스를 강제 재배포하고 안정 상태까지 대기
+#
+# GitHub Secrets:
+#   - AWS_ACCOUNT_ID          : AWS 계정 ID
+#   - AWS_ROLE_ARN            : OIDC 역할 ARN
+#
+# GitHub Variables (Settings > Variables > Actions):
+#   - ECR_REPOSITORY          : ECR 리포지토리 이름
+#   - ECS_CLUSTER             : ECS 클러스터 이름
+#   - ECS_SERVICE             : ECS 서비스 이름
+# ============================================================================
+
+name: Deploy to ECS
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+  ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    steps:
+      # ── 1. 소스 체크아웃 ──
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. ECR에 이미지 Push ──
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push Docker Image
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      # ── 3. ECS 배포 ──
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --force-new-deployment \
+            --region $AWS_REGION
+
+      - name: Wait for Service Stability
+        run: |
+          aws ecs wait services-stable \
+            --cluster $ECS_CLUSTER \
+            --services $ECS_SERVICE \
+            --region $AWS_REGION
+
+      # ── 4. 요약 ──
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: \`$ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cluster**: \`$ECS_CLUSTER\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service**: \`$ECS_SERVICE\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
