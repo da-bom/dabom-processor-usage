@@ -1,4 +1,4 @@
-package com.project.domain.usage.repository;
+package com.project.domain.eventoutbox.repository;
 
 import java.util.Optional;
 
@@ -7,11 +7,11 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import com.project.domain.usage.entity.UsageEventOutbox;
+import com.project.domain.eventoutbox.entity.EventOutbox;
 
-public interface UsageEventOutboxRepository extends JpaRepository<UsageEventOutbox, Long> {
+public interface EventOutboxRepository extends JpaRepository<EventOutbox, Long> {
 
-    Optional<UsageEventOutbox> findByEventId(String eventId);
+    Optional<EventOutbox> findByEventId(String eventId);
 
     @Modifying
     @Query(
@@ -31,12 +31,12 @@ public interface UsageEventOutboxRepository extends JpaRepository<UsageEventOutb
     @Modifying
     @Query(
             """
-            update UsageEventOutbox o
+            update EventOutbox o
             set o.payloadJson = :payloadJson,
                 o.nextRetryAt = null,
                 o.lastError = null
             where o.eventId = :eventId
-              and o.status = com.project.domain.usage.enums.UsageOutboxStatus.PUBLISH_PENDING
+              and o.status = com.project.domain.eventoutbox.enums.EventOutboxStatus.PUBLISH_PENDING
             """)
     int refreshPendingPayload(
             @Param("eventId") String eventId, @Param("payloadJson") String payloadJson);
@@ -44,12 +44,12 @@ public interface UsageEventOutboxRepository extends JpaRepository<UsageEventOutb
     @Modifying
     @Query(
             """
-            update UsageEventOutbox o
-            set o.status = com.project.domain.usage.enums.UsageOutboxStatus.SENT,
+            update EventOutbox o
+            set o.status = com.project.domain.eventoutbox.enums.EventOutboxStatus.SENT,
                 o.nextRetryAt = null,
                 o.lastError = null
             where o.id = :outboxId
-              and o.status = com.project.domain.usage.enums.UsageOutboxStatus.PUBLISH_PENDING
+              and o.status = com.project.domain.eventoutbox.enums.EventOutboxStatus.PUBLISH_PENDING
             """)
     int markSentIfPending(@Param("outboxId") Long outboxId);
 }

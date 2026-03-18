@@ -1,4 +1,4 @@
-package com.project.domain.usage.entity;
+package com.project.domain.eventoutbox.entity;
 
 import java.time.LocalDateTime;
 
@@ -14,7 +14,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import com.project.common.util.BaseEntity;
-import com.project.domain.usage.enums.UsageOutboxStatus;
+import com.project.domain.eventoutbox.enums.EventOutboxStatus;
 
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -32,7 +32,7 @@ import lombok.NoArgsConstructor;
         indexes = {
             @Index(name = "idx_usage_outbox_status_retry", columnList = "status, next_retry_at")
         })
-public class UsageEventOutbox extends BaseEntity {
+public class EventOutbox extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -49,7 +49,7 @@ public class UsageEventOutbox extends BaseEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
-    private UsageOutboxStatus status;
+    private EventOutboxStatus status;
 
     @Column(name = "payload_json", columnDefinition = "TEXT")
     private String payloadJson;
@@ -64,12 +64,12 @@ public class UsageEventOutbox extends BaseEntity {
     private String lastError;
 
     @Builder
-    private UsageEventOutbox(
+    private EventOutbox(
             Long id,
             String eventId,
             Long familyId,
             Long customerId,
-            UsageOutboxStatus status,
+            EventOutboxStatus status,
             String payloadJson,
             int retryCount,
             LocalDateTime nextRetryAt,

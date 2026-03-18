@@ -22,15 +22,16 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.dabom.messaging.kafka.event.dto.notification.NotificationPayload;
 import com.dabom.messaging.kafka.event.dto.notification.NotificationType;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.project.domain.usage.entity.UsageEventOutbox;
-import com.project.domain.usage.enums.UsageOutboxStatus;
-import com.project.domain.usage.repository.UsageEventOutboxRepository;
+import com.project.domain.eventoutbox.entity.EventOutbox;
+import com.project.domain.eventoutbox.enums.EventOutboxStatus;
+import com.project.domain.eventoutbox.repository.EventOutboxRepository;
+import com.project.domain.eventoutbox.service.EventOutboxService;
 
 @ExtendWith(MockitoExtension.class)
-class UsageEventOutboxServiceTest {
+class EventOutboxServiceTest {
 
-    @InjectMocks private UsageEventOutboxService usageEventOutboxService;
-    @Mock private UsageEventOutboxRepository usageEventOutboxRepository;
+    @InjectMocks private EventOutboxService eventOutboxService;
+    @Mock private EventOutboxRepository eventOutboxRepository;
     @Spy private ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
@@ -39,33 +40,33 @@ class UsageEventOutboxServiceTest {
         NotificationPayload payload =
                 new NotificationPayload(
                         100L, 1L, NotificationType.THRESHOLD_ALERT, "title", "message", Map.of());
-        UsageEventOutbox pending =
-                UsageEventOutbox.builder()
+        EventOutbox pending =
+                EventOutbox.builder()
                         .id(10L)
                         .eventId("evt_2")
                         .familyId(100L)
                         .customerId(1L)
-                        .status(UsageOutboxStatus.PUBLISH_PENDING)
+                        .status(EventOutboxStatus.PUBLISH_PENDING)
                         .payloadJson(objectMapper.valueToTree(payload).toString())
                         .retryCount(0)
                         .build();
 
         given(
-                        usageEventOutboxRepository.insertPublishPendingIgnore(
+                        eventOutboxRepository.insertPublishPendingIgnore(
                                 eq("evt_2"), eq(100L), eq(1L), any(String.class)))
                 .willReturn(1);
-        given(usageEventOutboxRepository.refreshPendingPayload(eq("evt_2"), any(String.class)))
+        given(eventOutboxRepository.refreshPendingPayload(eq("evt_2"), any(String.class)))
                 .willReturn(1);
-        given(usageEventOutboxRepository.findByEventId("evt_2")).willReturn(Optional.of(pending));
+        given(eventOutboxRepository.findByEventId("evt_2")).willReturn(Optional.of(pending));
 
-        Optional<UsageEventOutboxService.PendingNotificationDispatch> dispatch =
-                usageEventOutboxService.stageAfterRedisApplied("evt_2", payload, true);
+        Optional<EventOutboxService.PendingNotificationDispatch> dispatch =
+                eventOutboxService.stageAfterRedisApplied("evt_2", payload, true);
 
         assertTrue(dispatch.isPresent());
         assertEquals(100L, dispatch.get().payload().familyId());
-        verify(usageEventOutboxRepository)
+        verify(eventOutboxRepository)
                 .insertPublishPendingIgnore(eq("evt_2"), eq(100L), eq(1L), any(String.class));
-        verify(usageEventOutboxRepository).refreshPendingPayload(eq("evt_2"), any(String.class));
+        verify(eventOutboxRepository).refreshPendingPayload(eq("evt_2"), any(String.class));
     }
 
     @Test
@@ -75,13 +76,13 @@ class UsageEventOutboxServiceTest {
                 new NotificationPayload(
                         100L, 1L, NotificationType.THRESHOLD_ALERT, "title", "message", Map.of());
 
-        Optional<UsageEventOutboxService.PendingNotificationDispatch> dispatch =
-                usageEventOutboxService.stageAfterRedisApplied("evt_3", payload, false);
+        Optional<EventOutboxService.PendingNotificationDispatch> dispatch =
+                eventOutboxService.stageAfterRedisApplied("evt_3", payload, false);
 
         assertTrue(dispatch.isEmpty());
-        verify(usageEventOutboxRepository, never())
+        verify(eventOutboxRepository, never())
                 .insertPublishPendingIgnore(any(), any(Long.class), any(Long.class), any());
-        verify(usageEventOutboxRepository, never()).refreshPendingPayload(any(), any());
+        verify(eventOutboxRepository, never()).refreshPendingPayload(any(), any());
     }
 
     @Test
@@ -95,20 +96,20 @@ class UsageEventOutboxServiceTest {
                         "title",
                         "message",
                         Map.of("threshold", 10));
-        UsageEventOutbox pending =
-                UsageEventOutbox.builder()
+        EventOutbox pending =
+                EventOutbox.builder()
                         .id(20L)
                         .eventId("evt_4")
                         .familyId(100L)
                         .customerId(1L)
-                        .status(UsageOutboxStatus.PUBLISH_PENDING)
+                        .status(EventOutboxStatus.PUBLISH_PENDING)
                         .payloadJson(objectMapper.valueToTree(payload).toString())
                         .retryCount(0)
                         .build();
-        given(usageEventOutboxRepository.findByEventId("evt_4")).willReturn(Optional.of(pending));
+        given(eventOutboxRepository.findByEventId("evt_4")).willReturn(Optional.of(pending));
 
-        Optional<UsageEventOutboxService.PendingNotificationDispatch> found =
-                usageEventOutboxService.findPendingDispatchByEventId("evt_4");
+        Optional<EventOutboxService.PendingNotificationDispatch> found =
+                eventOutboxService.findPendingDispatchByEventId("evt_4");
 
         assertTrue(found.isPresent());
         assertEquals(20L, found.get().outboxId());
