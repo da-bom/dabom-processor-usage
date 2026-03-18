@@ -84,7 +84,7 @@ public class UsageNotificationPayloadMapper {
         return new NotificationPayload(
                 usagePayload.familyId(),
                 usagePayload.customerId(),
-                NotificationType.BLOCKED,
+                NotificationType.CUSTOMER_BLOCKED,
                 "데이터 사용 차단",
                 message,
                 data);
