@@ -20,9 +20,9 @@ import com.dabom.messaging.kafka.metrics.KafkaMetrics;
 import com.project.common.config.TimeConfig;
 import com.project.common.util.LogSanitizer;
 import com.project.common.util.RedisKeyGenerator;
+import com.project.domain.eventoutbox.service.EventOutboxService;
 import com.project.domain.policy.helper.PolicyConstraintWarmupHelper;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
-import com.project.domain.usage.service.helper.UsageEventOutboxService;
 import com.project.domain.usage.service.helper.UsageFamilyMembershipCacheHelper;
 import com.project.domain.usage.service.helper.UsageLuaExecutor;
 import com.project.domain.usage.service.helper.UsageNotificationPayloadMapper;
@@ -46,7 +46,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
     private final PolicyConstraintWarmupHelper policyConstraintWarmupHelper;
     private final UsageLuaExecutor usageLuaExecutor;
     private final UsagePersistService usagePersistService;
-    private final UsageEventOutboxService usageEventOutboxService;
+    private final EventOutboxService eventOutboxService;
     private final UsageProcessingDecisionMapper usageProcessingDecisionMapper;
     private final UsageNotificationPayloadMapper usageNotificationPayloadMapper;
     private final UsageNotificationPublisher usageNotificationPublisher;
@@ -167,7 +167,7 @@ public class UsageSyncServiceImpl implements UsageSyncService {
                 usageNotificationPayloadMapper.toNotificationPayload(
                         eventId, resolvedEventDateTime, payload, decision.notificationStatus());
 
-        usageEventOutboxService
+        eventOutboxService
                 .stageAfterRedisApplied(eventId, notificationPayload, true)
                 .ifPresent(this::publishAsync);
     }
@@ -214,17 +214,17 @@ public class UsageSyncServiceImpl implements UsageSyncService {
 
     // 이미 만들어진 pending notification이 있으면 다시 즉시 발행을 시도한다.
     private void dispatchPendingNotificationIfExists(String eventId) {
-        usageEventOutboxService.findPendingDispatchByEventId(eventId).ifPresent(this::publishAsync);
+        eventOutboxService.findPendingDispatchByEventId(eventId).ifPresent(this::publishAsync);
     }
 
     // notification은 비동기로 발행하고 성공 시에만 SENT로 마감한다.
-    private void publishAsync(UsageEventOutboxService.PendingNotificationDispatch pending) {
+    private void publishAsync(EventOutboxService.PendingNotificationDispatch pending) {
         usageNotificationPublisher
                 .publishAsync(pending.payload())
                 .whenComplete(
                         (SendResult<String, String> ignored, Throwable throwable) -> {
                             if (throwable == null) {
-                                usageEventOutboxService.markSent(pending.outboxId());
+                                eventOutboxService.markSent(pending.outboxId());
                                 return;
                             }
 

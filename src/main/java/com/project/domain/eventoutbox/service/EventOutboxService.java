@@ -1,4 +1,4 @@
-package com.project.domain.usage.service.helper;
+package com.project.domain.eventoutbox.service;
 
 import java.util.Optional;
 
@@ -9,8 +9,8 @@ import com.dabom.messaging.kafka.error.NonRetryableKafkaMessageProcessingExcepti
 import com.dabom.messaging.kafka.event.dto.notification.NotificationPayload;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.project.domain.usage.enums.UsageOutboxStatus;
-import com.project.domain.usage.repository.UsageEventOutboxRepository;
+import com.project.domain.eventoutbox.enums.EventOutboxStatus;
+import com.project.domain.eventoutbox.repository.EventOutboxRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,9 +18,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class UsageEventOutboxService {
+public class EventOutboxService {
 
-    private final UsageEventOutboxRepository usageEventOutboxRepository;
+    private final EventOutboxRepository eventOutboxRepository;
     private final ObjectMapper objectMapper;
 
     // notification 대상인 경우에만 PUBLISH_PENDING row를 보장한다.
@@ -32,12 +32,12 @@ public class UsageEventOutboxService {
         }
 
         String payloadJson = toJson(payload);
-        usageEventOutboxRepository.insertPublishPendingIgnore(
+        eventOutboxRepository.insertPublishPendingIgnore(
                 eventId, payload.familyId(), payload.customerId(), payloadJson);
-        usageEventOutboxRepository.refreshPendingPayload(eventId, payloadJson);
-        return usageEventOutboxRepository
+        eventOutboxRepository.refreshPendingPayload(eventId, payloadJson);
+        return eventOutboxRepository
                 .findByEventId(eventId)
-                .filter(row -> row.getStatus() == UsageOutboxStatus.PUBLISH_PENDING)
+                .filter(row -> row.getStatus() == EventOutboxStatus.PUBLISH_PENDING)
                 .map(
                         row ->
                                 new PendingNotificationDispatch(
@@ -48,9 +48,9 @@ public class UsageEventOutboxService {
     // eventId 기준으로 아직 발행되지 않은 notification payload를 찾는다.
     @Transactional(readOnly = true)
     public Optional<PendingNotificationDispatch> findPendingDispatchByEventId(String eventId) {
-        return usageEventOutboxRepository
+        return eventOutboxRepository
                 .findByEventId(eventId)
-                .filter(row -> row.getStatus() == UsageOutboxStatus.PUBLISH_PENDING)
+                .filter(row -> row.getStatus() == EventOutboxStatus.PUBLISH_PENDING)
                 .map(
                         row ->
                                 new PendingNotificationDispatch(
@@ -61,7 +61,7 @@ public class UsageEventOutboxService {
     // 발행 성공 시 Outbox 상태를 SENT로 변경한다.
     @Transactional
     public void markSent(Long outboxId) {
-        int updated = usageEventOutboxRepository.markSentIfPending(outboxId);
+        int updated = eventOutboxRepository.markSentIfPending(outboxId);
         if (updated == 0) {
             log.debug("Skip markSent because outbox is no longer pending. outboxId={}", outboxId);
         }

@@ -37,9 +37,9 @@ import com.dabom.messaging.kafka.event.dto.usage.UsagePayload;
 import com.dabom.messaging.kafka.metrics.KafkaMetrics;
 import com.project.common.util.LogSanitizer;
 import com.project.common.util.RedisKeyGenerator;
+import com.project.domain.eventoutbox.service.EventOutboxService;
 import com.project.domain.policy.helper.PolicyConstraintWarmupHelper;
 import com.project.domain.usage.service.dto.UsageUpdateResult;
-import com.project.domain.usage.service.helper.UsageEventOutboxService;
 import com.project.domain.usage.service.helper.UsageFamilyMembershipCacheHelper;
 import com.project.domain.usage.service.helper.UsageLuaExecutor;
 import com.project.domain.usage.service.helper.UsageNotificationPayloadMapper;
@@ -57,7 +57,7 @@ class UsageSyncServiceImplTest {
     @Mock private PolicyConstraintWarmupHelper policyConstraintWarmupHelper;
     @Mock private UsageLuaExecutor usageLuaExecutor;
     @Mock private UsagePersistService usagePersistService;
-    @Mock private UsageEventOutboxService usageEventOutboxService;
+    @Mock private EventOutboxService eventOutboxService;
     @Mock private UsageProcessingDecisionMapper usageProcessingDecisionMapper;
     @Mock private UsageNotificationPayloadMapper usageNotificationPayloadMapper;
     @Mock private UsageNotificationPublisher usageNotificationPublisher;
@@ -101,10 +101,10 @@ class UsageSyncServiceImplTest {
                         usageNotificationPayloadMapper.toNotificationPayload(
                                 any(), any(), any(), eq("WARNING_10")))
                 .willReturn(notificationPayload);
-        given(usageEventOutboxService.stageAfterRedisApplied(eventId, notificationPayload, true))
+        given(eventOutboxService.stageAfterRedisApplied(eventId, notificationPayload, true))
                 .willReturn(
                         Optional.of(
-                                new UsageEventOutboxService.PendingNotificationDispatch(
+                                new EventOutboxService.PendingNotificationDispatch(
                                         11L, notificationPayload)));
         given(usageNotificationPublisher.publishAsync(notificationPayload))
                 .willReturn(CompletableFuture.completedFuture(null));
@@ -132,7 +132,7 @@ class UsageSyncServiceImplTest {
 
         verify(usagePersistService).persistFromUsageEvent(eventId, eventTime, payload, "ALLOWED");
         verify(usageNotificationPublisher).publishAsync(notificationPayload);
-        verify(usageEventOutboxService).markSent(11L);
+        verify(eventOutboxService).markSent(11L);
     }
 
     @Test
@@ -195,10 +195,10 @@ class UsageSyncServiceImplTest {
                         usageNotificationPayloadMapper.toNotificationPayload(
                                 any(), any(), any(), eq("WARNING_10")))
                 .willReturn(notificationPayload);
-        given(usageEventOutboxService.stageAfterRedisApplied(eventId, notificationPayload, true))
+        given(eventOutboxService.stageAfterRedisApplied(eventId, notificationPayload, true))
                 .willReturn(
                         Optional.of(
-                                new UsageEventOutboxService.PendingNotificationDispatch(
+                                new EventOutboxService.PendingNotificationDispatch(
                                         21L, notificationPayload)));
         given(usageNotificationPublisher.publishAsync(notificationPayload))
                 .willReturn(CompletableFuture.completedFuture(null));
@@ -234,10 +234,10 @@ class UsageSyncServiceImplTest {
                         new UsageUpdateResult(
                                 5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L, false, true));
         given(usageProcessingDecisionMapper.fromLuaStatus("NORMAL")).willReturn(decision);
-        given(usageEventOutboxService.findPendingDispatchByEventId(eventId))
+        given(eventOutboxService.findPendingDispatchByEventId(eventId))
                 .willReturn(
                         Optional.of(
-                                new UsageEventOutboxService.PendingNotificationDispatch(
+                                new EventOutboxService.PendingNotificationDispatch(
                                         31L, notificationPayload)));
         given(usageNotificationPublisher.publishAsync(notificationPayload))
                 .willReturn(CompletableFuture.completedFuture(null));
@@ -245,9 +245,9 @@ class UsageSyncServiceImplTest {
         usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
 
         verify(usagePersistService).persistFromUsageEvent(eventId, eventTime, payload, "ALLOWED");
-        verify(usageEventOutboxService, never()).stageAfterRedisApplied(any(), any(), anyBoolean());
+        verify(eventOutboxService, never()).stageAfterRedisApplied(any(), any(), anyBoolean());
         verify(usageNotificationPublisher).publishAsync(notificationPayload);
-        verify(usageEventOutboxService).markSent(31L);
+        verify(eventOutboxService).markSent(31L);
     }
 
     @Test
@@ -267,7 +267,7 @@ class UsageSyncServiceImplTest {
                         new UsageUpdateResult(
                                 5000L, 5000L, "APP_BLOCK", 1000L, 0.1, 10000L, false, false));
         given(usageProcessingDecisionMapper.fromLuaStatus("APP_BLOCK")).willReturn(decision);
-        given(usageEventOutboxService.findPendingDispatchByEventId(eventId))
+        given(eventOutboxService.findPendingDispatchByEventId(eventId))
                 .willReturn(Optional.empty());
 
         usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
@@ -275,7 +275,7 @@ class UsageSyncServiceImplTest {
         verify(usagePersistService).persistFromUsageEvent(eventId, eventTime, payload, "APP_BLOCK");
         verify(usageNotificationPayloadMapper, never())
                 .toNotificationPayload(any(), any(), any(), any());
-        verify(usageEventOutboxService, never()).stageAfterRedisApplied(any(), any(), anyBoolean());
+        verify(eventOutboxService, never()).stageAfterRedisApplied(any(), any(), anyBoolean());
         verify(usageNotificationPublisher, never()).publishAsync(any());
     }
 
@@ -296,7 +296,7 @@ class UsageSyncServiceImplTest {
                         new UsageUpdateResult(
                                 5000L, 5000L, "NORMAL", 1000L, 0.1, 10000L, false, false));
         given(usageProcessingDecisionMapper.fromLuaStatus("NORMAL")).willReturn(decision);
-        given(usageEventOutboxService.findPendingDispatchByEventId(eventId))
+        given(eventOutboxService.findPendingDispatchByEventId(eventId))
                 .willReturn(Optional.empty());
 
         usageSyncServiceImpl.syncUsage(eventId, eventTime, payload);
@@ -304,7 +304,7 @@ class UsageSyncServiceImplTest {
         verify(usagePersistService).persistFromUsageEvent(eventId, eventTime, payload, "ALLOWED");
         verify(usageNotificationPayloadMapper, never())
                 .toNotificationPayload(any(), any(), any(), any());
-        verify(usageEventOutboxService, never()).stageAfterRedisApplied(any(), any(), anyBoolean());
+        verify(eventOutboxService, never()).stageAfterRedisApplied(any(), any(), anyBoolean());
     }
 
     @Test
