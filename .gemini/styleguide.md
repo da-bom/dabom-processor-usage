@@ -43,17 +43,15 @@ com.project
 │   └─ infra/                 # 인프라 어댑터
 │       ├─ cache/             # Redis 캐시 Repository
 │       └─ messaging/         # EventPublisher(Interface) + Kafka Producer/Consumer
-└─ global/
+└─ common/
     ├─ config/                # 횡단 설정 (Redis, Kafka, Swagger, CORS, ThreadPool)
     ├─ exception/             # ExceptionAdvice, BaseException, ErrorCode
-    ├─ entity/                # BaseEntity (공통 엔티티)
     ├─ api/response/          # ApiResponse<T> 공통 응답 래퍼
-    ├─ event/dto/             # 공유 Kafka 이벤트 Payload DTO
-    └─ util/                  # RedisKeyGenerator
+    └─ util/                  # RedisKeyGenerator, BaseEntity (공통 엔티티)
 ```
 
 - 기술 기준이 아닌 **업무(Feature) 기준**으로 패키지를 나눈다.
-- `global`은 횡단 관심사만 둔다. 도메인 비즈니스 로직을 `global`에 두지 않는다.
+- `common`은 횡단 관심사만 둔다. 도메인 비즈니스 로직을 `common`에 두지 않는다.
 
 ### 도입하지 않는 것
 
@@ -202,7 +200,7 @@ family.addMember(customerId)
 ### 캐시 (Redis)
 
 - Redis 캐시 어댑터는 `infra/cache/`에 위치한다.
-- Redis Key 규칙은 `global/util/RedisKeyGenerator`에서 통합 관리한다.
+- Redis Key 규칙은 `common/util/RedisKeyGenerator`에서 통합 관리한다.
 - 조회 시 **Cache Look-Aside** 패턴을 기본으로 사용한다: 캐시 확인 → 미스 시 DB 조회 → 캐시 저장.
 
 ---
@@ -215,7 +213,7 @@ family.addMember(customerId)
 
 ---
 
-## 10) BaseEntity 공통 관리 원칙 (global)
+## 10) BaseEntity 공통 관리 원칙 (common)
 
 ### 🎯 목적
 - **일관성 유지**: 생성/수정/삭제 시간 일관성 유지.
@@ -225,7 +223,7 @@ family.addMember(customerId)
 
 ### 📦 위치
 ```text
-global
+common
 └─ entity
     └─ BaseEntity
 ```
@@ -265,15 +263,15 @@ global
 
 리뷰 시 아래 패턴이 발견되면 반드시 지적한다:
 
-| 안티패턴 | 설명 |
-|----------|------|
-| **Setter 사용** | `setXxx()` 대신 의미 있는 비즈니스 메서드 사용 |
-| **Entity 직접 노출** | Controller가 Entity를 반환하면 `from()`으로 DTO 변환 |
-| **BaseEntity 미사용** | 날짜 필드 직접 구현 대신 `extends BaseEntity` 사용 |
-| **DTO에 toEntity()** | Request DTO에 변환 로직을 두지 않고 Service에서 Builder로 생성 |
+| 안티패턴                                      | 설명 |
+|-------------------------------------------|------|
+| **Setter 사용**                             | `setXxx()` 대신 의미 있는 비즈니스 메서드 사용 |
+| **Entity 직접 노출**                          | Controller가 Entity를 반환하면 `from()`으로 DTO 변환 |
+| **BaseEntity 미사용**                        | 날짜 필드 직접 구현 대신 `extends BaseEntity` 사용 |
+| **DTO에 toEntity()**                       | Request DTO에 변환 로직을 두지 않고 Service에서 Builder로 생성 |
 | **Controller/Repository에 @Transactional** | 트랜잭션은 Service에만 선언 |
-| **도메인 간 Entity 직접 참조** | ID 기반 참조로 변경 |
-| **Consumer에 비즈니스 로직** | Consumer는 파싱 후 Service로 위임만 |
-| **global에 도메인 로직** | global은 횡단 관심사만 허용 |
-| **Service 비대화** | 100줄 초과 시 역할 분리 검토 |
-| **RuntimeException 직접 throw** | `ApplicationException` + 도메인별 `ErrorCode`를 사용 |
+| **도메인 간 Entity 직접 참조**                    | ID 기반 참조로 변경 |
+| **Consumer에 비즈니스 로직**                     | Consumer는 파싱 후 Service로 위임만 |
+| **common에 도메인 로직**                        | common은 횡단 관심사만 허용 |
+| **Service 비대화**                           | 100줄 초과 시 역할 분리 검토 |
+| **RuntimeException 직접 throw**             | `ApplicationException` + 도메인별 `ErrorCode`를 사용 |
