@@ -10,9 +10,9 @@
 <p>
   <img src="https://img.shields.io/badge/Java-21-ff9a3c?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Spring_Boot-3.4.0-6DB33F?style=for-the-badge&logo=springboot&logoColor=white" />
-  <img src="https://img.shields.io/badge/Kafka-Processing_Service-000000?style=for-the-badge&logo=apachekafka" />
-  <img src="https://img.shields.io/badge/Redis-Lua_Decision-DC382D?style=for-the-badge&logo=redis&logoColor=white" />
-  <img src="https://img.shields.io/badge/MySQL-Database-4479A1?style=for-the-badge&logo=mysql&logoColor=white" />
+  <img src="https://img.shields.io/badge/Kafka-3.6.0-000000?style=for-the-badge&logo=apachekafka" />
+  <img src="https://img.shields.io/badge/Redis-7.1.0-DC382D?style=for-the-badge&logo=redis&logoColor=white" />
+<img src="https://img.shields.io/badge/MySQL-8.0-4479A1?style=for-the-badge&logo=mysql&logoColor=white" />
 </p>
 
 <p>
