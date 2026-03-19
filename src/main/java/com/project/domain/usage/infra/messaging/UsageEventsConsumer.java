@@ -31,7 +31,8 @@ public class UsageEventsConsumer implements KafkaEventConsumer<UsagePayload> {
 
     @KafkaListener(
             topics = KafkaTopics.USAGE_EVENTS,
-            groupId = KafkaConsumerGroups.DABOM_PROCESSOR_USAGE_MAIN)
+            groupId = KafkaConsumerGroups.DABOM_PROCESSOR_USAGE_MAIN,
+            concurrency = "${app.kafka.usage-events.concurrency:4}")
     public void consume(ConsumerRecord<String, String> consumerRecord) {
         consume(consumerRecord, kafkaEventMessageSupport);
     }
